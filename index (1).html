@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ExamReady — Online Test Series</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Nunito',sans-serif;background:#fff;color:#1e293b;}
+input,select,textarea,button{font-family:inherit;}
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:#f1f5f9;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+
+/* SCIENCE BG */
+.sci-bg{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0;}
+.sci-bg svg{position:absolute;opacity:0.07;}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+.fade{animation:fadeUp 0.4s ease;}
+.spinner{width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.7s linear infinite;}
+
+/* CARDS */
+.card{background:#fff;border:1.5px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 24px rgba(0,0,0,0.07);}
+.card-blue{background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;}
+.card-green{background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1.5px solid #bbf7d0;}
+.card-purple{background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1.5px solid #ddd6fe;}
+
+/* INPUTS */
+.inp{width:100%;padding:11px 14px;border-radius:10px;border:1.5px solid #e2e8f0;background:#f8fafc;color:#1e293b;font-size:14px;outline:none;transition:border 0.2s;}
+.inp:focus{border-color:#3b82f6;background:#fff;}
+select.inp{cursor:pointer;}
+
+/* BUTTONS */
+.btn-primary{padding:11px 22px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:14px;font-weight:700;font-family:inherit;transition:opacity 0.2s,transform 0.1s;}
+.btn-primary:hover{opacity:0.92;transform:translateY(-1px);}
+.btn-secondary{padding:10px 20px;border-radius:10px;border:1.5px solid #e2e8f0;cursor:pointer;background:#fff;color:#64748b;font-size:14px;font-weight:600;font-family:inherit;transition:all 0.2s;}
+.btn-secondary:hover{border-color:#94a3b8;color:#374151;}
+.btn-green{padding:11px 22px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:14px;font-weight:700;font-family:inherit;}
+.btn-red{padding:11px 22px;border-radius:10px;border:none;cursor:pointer;background:#dc2626;color:#fff;font-size:14px;font-weight:700;font-family:inherit;}
+.btn-purple{padding:11px 22px;border-radius:10px;border:none;cursor:pointer;background:#7c3aed;color:#fff;font-size:14px;font-weight:700;font-family:inherit;}
+.btn-orange{padding:11px 22px;border-radius:10px;border:none;cursor:pointer;background:#ea580c;color:#fff;font-size:14px;font-weight:700;font-family:inherit;}
+
+/* LABEL */
+.lbl{color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;display:block;margin-bottom:5px;}
+
+/* TOP BAR */
+.topbar{background:#fff;border-bottom:1.5px solid #e2e8f0;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+
+/* OPTION BUTTONS */
+.opt-btn{background:#f8fafc;border:2px solid #e2e8f0;border-radius:12px;padding:13px 16px;cursor:pointer;color:#374151;font-size:15px;text-align:left;font-family:inherit;display:flex;align-items:center;gap:12px;width:100%;transition:all 0.15s;}
+.opt-btn:hover{border-color:#93c5fd;background:#eff6ff;}
+.opt-btn.selected{background:#eff6ff;border-color:#3b82f6;color:#1d4ed8;}
+.opt-circle{width:30px;height:30px;border-radius:50%;flex-shrink:0;background:#e2e8f0;border:2px solid #cbd5e1;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#64748b;transition:all 0.15s;}
+.opt-btn.selected .opt-circle{background:#3b82f6;border-color:#3b82f6;color:#fff;}
+</style>
+</head>
+<body>
+
+<!-- SCIENCE BACKGROUND SVG -->
+<div class="sci-bg" id="sciBg"></div>
+
+<div id="root"></div>
+
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{getFirestore,collection,addDoc,getDocs,doc,updateDoc,deleteDoc,query,orderBy,serverTimestamp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig={
+  apiKey:"AIzaSyBBprATihKt7tbhifTaHhicTRGdZI_15mM",
+  authDomain:"examready-65881.firebaseapp.com",
+  projectId:"examready-65881",
+  storageBucket:"examready-65881.firebasestorage.app",
+  messagingSenderId:"681767961235",
+  appId:"1:681767961235:web:aa929375f50dbd05a60366"
+};
+const fbApp=initializeApp(firebaseConfig);
+const db=getFirestore(fbApp);
+
+const ADMIN_USER="mithilesh18",ADMIN_PASS="233303";
+
+// SCIENCE BG
+(function(){
+  const symbols=["∫","∑","√","π","∞","Δ","α","β","γ","λ","μ","σ","Ω","θ","φ","ε","∂","∇","±","×","÷","H₂O","CO₂","E=mc²","F=ma","V=IR","PV=nRT","∮","⊕","⊗","H₂SO₄","NaCl","Fe","Cu","Zn","∀","∃","⟹","∈","⊂","Hz","eV","kJ","mol","Pa"];
+  const svg=document.getElementById("sciBg");
+  let html="";
+  for(let i=0;i<60;i++){
+    const x=Math.random()*100,y=Math.random()*100;
+    const size=Math.random()*18+10;
+    const rot=Math.random()*60-30;
+    const sym=symbols[Math.floor(Math.random()*symbols.length)];
+    const color=["#3b82f6","#7c3aed","#16a34a","#ea580c","#0891b2"][Math.floor(Math.random()*5)];
+    html+=`<text style="position:absolute;font-family:'JetBrains Mono',monospace;font-size:${size}px;fill:${color};opacity:0.12;transform:rotate(${rot}deg);" x="${x}%" y="${y}%">${sym}</text>`;
+  }
+  svg.innerHTML=`<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">${html}</svg>`;
+})();
+
+const INSTRUCTIONS=[
+  {type:"heading",text:"Welcome to ExamReady — Junior Engineer & Supervisor Test Series"},
+  {type:"point",text:"This examination consists of two parts: Part I and Part II."},
+  {type:"point",text:"Part I is the Technical / Professional Knowledge Test containing 120 questions worth 120 marks."},
+  {type:"point",text:"Part II is the Supervisory Aptitude Test containing 50 questions worth 50 marks."},
+  {type:"point",text:"The total duration of the examination is 2 hours (120 minutes)."},
+  {type:"point",text:"The total marks for this examination are 170."},
+  {type:"point",text:"For every correct answer, you will be awarded +1 mark."},
+  {type:"point",text:"For every incorrect answer, -0.25 marks will be deducted (25% negative marking)."},
+  {type:"point",text:"Questions left unattempted will carry 0 marks — no penalty for skipping."},
+  {type:"point",text:"You can navigate between questions using the Previous and Save & Next buttons."},
+  {type:"point",text:"You may mark any question for review using the Mark for Review button."},
+  {type:"point",text:"The question palette on the right shows the status of each question at a glance."},
+  {type:"symbols",text:"Question palette colour guide:"},
+  {type:"point",text:"The live timer is displayed at the top right — keep an eye on it."},
+  {type:"point",text:"The examination will auto-submit when the timer reaches zero."},
+  {type:"point",text:"You may submit the exam manually at any time using the Submit Test button."},
+  {type:"point",text:"Once submitted, you cannot go back and change your answers."},
+  {type:"point",text:"Your result will display your score, accuracy, rank and time taken after submission."},
+  {type:"point",text:"Please do not refresh or close the browser tab during the examination."},
+  {type:"point",text:"Read each question carefully before selecting your answer."},
+  {type:"heading",text:"All the best — attempt confidently and manage your time wisely!"},
+];
+
+function pad(n){return String(n).padStart(2,"0");}
+function formatTime(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${pad(h)}:${pad(m)}:${pad(sec)}`:`${pad(m)}:${pad(sec)}`;}
+function uid(){return Date.now()+Math.random();}
+function makeCaptcha(){const a=Math.floor(Math.random()*9)+1,b=Math.floor(Math.random()*9)+1,p=Math.random()>0.5;return p?{q:`${a} + ${b} = ?`,ans:a+b}:{q:`${Math.max(a,b)} − ${Math.min(a,b)} = ?`,ans:Math.abs(a-b)};}
+function el(id){return document.getElementById(id);}
+
+let state={
+  screen:"landing",
+  student:null,
+  questions:[],
+  answers:{},
+  statuses:{},
+  timeLeft:7200,
+  startTime:null,
+  timeTaken:0,
+  timerInterval:null,
+  correct:0,incorrect:0,unattempted:0,score:0,
+  currentIdx:0,
+  showConfirm:false,
+  showAdminLogin:false,
+  logoClickCount:0,
+  logoClickTimer:null,
+  captcha:makeCaptcha(),
+  instrRevealed:0,
+  instrTimer:null,
+  adminTab:"add",
+  adminFilter:0,
+  adminEditId:null,
+  adminForm:{question:"",options:["","","",""],correct:0,part:1,solution:""},
+  adminBulk:"",adminBulkMsg:"",adminErr:"",
+  resultData:null,
+  showLeaderboard:false,
+  allResults:[],
+  showSolutions:false,
+};
+
+// FIREBASE
+async function loadQuestions(){
+  try{const s=await getDocs(query(collection(db,"questions"),orderBy("createdAt","asc")));state.questions=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){console.error(e);}
+}
+async function saveQuestion(data){
+  try{const r=await addDoc(collection(db,"questions"),{...data,createdAt:serverTimestamp()});state.questions.push({id:r.id,...data});return true;}catch(e){return false;}
+}
+async function updateQuestion(id,data){
+  try{await updateDoc(doc(db,"questions",id),data);state.questions=state.questions.map(q=>q.id===id?{...q,...data}:q);return true;}catch(e){return false;}
+}
+async function deleteQuestion(id){
+  try{await deleteDoc(doc(db,"questions",id));state.questions=state.questions.filter(q=>q.id!==id);return true;}catch(e){return false;}
+}
+async function saveResult(data){
+  try{await addDoc(collection(db,"results"),{...data,submittedAt:serverTimestamp()});}catch(e){}
+}
+async function loadAllResults(){
+  try{const s=await getDocs(query(collection(db,"results"),orderBy("score","desc")));
+  const results=s.docs.map(d=>({id:d.id,...d.data()}));
+  // Rank by score desc, timeTaken asc
+  results.sort((a,b)=>b.score-a.score||(a.timeTaken||0)-(b.timeTaken||0));
+  state.allResults=results.map((r,i)=>({...r,rank:i+1}));
+  return state.allResults;}catch(e){return[];}
+}
+
+// AI SOLUTION
+async function generateAISolution(question,options,correct){
+  try{
+    const prompt=`You are an expert teacher for competitive exams (Junior Engineer/Supervisor level). 
+Question: ${question}
+Options: A) ${options[0]}  B) ${options[1]}  C) ${options[2]}  D) ${options[3]}
+Correct Answer: ${String.fromCharCode(65+correct)}) ${options[correct]}
+
+Provide a clear, concise explanation (3-5 lines) of why this is correct. Include relevant formula or concept if applicable. Be direct and educational.`;
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,messages:[{role:"user",content:prompt}]})
+    });
+    const data=await res.json();
+    return data.content?.[0]?.text||"Solution not available.";
+  }catch(e){return"Solution not available.";}
+}
+
+// RENDER
+function render(){
+  const root=el("root");root.innerHTML="";
+  if(state.showAdminLogin)root.appendChild(renderAdminModal());
+  let s;
+  if(state.screen==="landing")s=renderLanding();
+  else if(state.screen==="signin")s=renderSignIn();
+  else if(state.screen==="instructions")s=renderInstructions();
+  else if(state.screen==="exam")s=renderExam();
+  else if(state.screen==="result")s=renderResult();
+  else if(state.screen==="solutions")s=renderSolutions();
+  else if(state.screen==="admin")s=renderAdmin();
+  else s=renderLanding();
+  root.appendChild(s);
+}
+
+// 1. LANDING
+function renderLanding(){
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div id="logoWrap" style="text-align:center;margin-bottom:50px;cursor:default;user-select:none;animation:float 3s ease-in-out infinite;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:100px;height:100px;border-radius:28px;background:linear-gradient(135deg,#2563eb,#7c3aed);margin-bottom:20px;font-size:44px;box-shadow:0 20px 60px rgba(37,99,235,0.3);">📋</div>
+      <h1 style="color:#1e293b;font-size:46px;font-weight:900;letter-spacing:-2px;font-family:'Crimson Pro',serif;">ExamReady</h1>
+      <p style="color:#64748b;margin-top:8px;font-size:14px;letter-spacing:3px;text-transform:uppercase;font-weight:600;">Junior Engineer & Supervisor Test Series</p>
+    </div>
+    <button id="siBtn" class="btn-primary" style="padding:16px 60px;font-size:18px;border-radius:14px;box-shadow:0 10px 40px rgba(37,99,235,0.25);">Sign In</button>
+    <p style="color:#cbd5e1;margin-top:48px;font-size:12px;">&copy; ${new Date().getFullYear()} ExamReady. All rights reserved.</p>
+  `;
+  d.querySelector("#siBtn").onclick=()=>goTo("signin");
+  d.querySelector("#logoWrap").onclick=handleLogoClick;
+  return d;
+}
+
+function handleLogoClick(){
+  state.logoClickCount++;
+  clearTimeout(state.logoClickTimer);
+  if(state.logoClickCount>=10){state.logoClickCount=0;state.showAdminLogin=true;render();return;}
+  state.logoClickTimer=setTimeout(()=>state.logoClickCount=0,2000);
+}
+
+// ADMIN MODAL
+function renderAdminModal(){
+  const o=document.createElement("div");
+  o.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);";
+  o.innerHTML=`
+    <div class="card fade" style="padding:36px 32px;max-width:360px;width:90%;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:32px;margin-bottom:8px;">🔐</div>
+        <h2 style="color:#1e293b;font-size:20px;font-weight:800;">Admin Access</h2>
+        <p style="color:#94a3b8;margin-top:4px;font-size:13px;">Authorized Personnel Only</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <input id="aUser" placeholder="Username" class="inp"/>
+        <input id="aPass" type="password" placeholder="Password" class="inp"/>
+        <p id="aErr" style="color:#ef4444;font-size:13px;display:none;"></p>
+        <button id="aLogin" class="btn-primary" style="padding:12px;font-size:15px;">Login</button>
+        <button id="aCancel" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  `;
+  o.querySelector("#aLogin").onclick=()=>{
+    const u=o.querySelector("#aUser").value,p=o.querySelector("#aPass").value,e=o.querySelector("#aErr");
+    if(u===ADMIN_USER&&p===ADMIN_PASS){state.showAdminLogin=false;goTo("admin");}
+    else{e.textContent="⚠ Invalid credentials.";e.style.display="block";}
+  };
+  o.querySelector("#aCancel").onclick=()=>{state.showAdminLogin=false;render();};
+  return o;
+}
+
+// 2. SIGN IN
+function renderSignIn(){
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div class="card fade" style="padding:44px 38px;max-width:460px;width:100%;">
+      <div style="text-align:center;margin-bottom:30px;">
+        <div style="display:inline-flex;align-items:center;justify-content:center;width:58px;height:58px;border-radius:16px;background:linear-gradient(135deg,#2563eb,#7c3aed);margin-bottom:14px;font-size:24px;">📋</div>
+        <h1 style="color:#1e293b;font-size:22px;font-weight:900;font-family:'Crimson Pro',serif;">ExamReady</h1>
+        <p style="color:#94a3b8;margin-top:4px;font-size:13px;">Create your account to begin</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div><label class="lbl">Full Name *</label><input id="siName" placeholder="Enter your full name" class="inp"/></div>
+        <div><label class="lbl">Email Address *</label><input id="siEmail" type="email" placeholder="Enter your email" class="inp"/></div>
+        <div><label class="lbl">Course *</label>
+          <select id="siCourse" class="inp">
+            <option value="">— Select your course —</option>
+            <option value="B.Tech">B.Tech</option>
+            <option value="Diploma">Diploma</option>
+          </select>
+        </div>
+        <div><label class="lbl">Captcha Verification *</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div id="capQ" style="background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;border-radius:10px;padding:10px 18px;color:#2563eb;font-weight:800;font-size:18px;letter-spacing:2px;flex-shrink:0;font-family:'JetBrains Mono',monospace;">${state.captcha.q}</div>
+            <input id="capAns" placeholder="Answer" class="inp" style="width:90px;"/>
+            <button id="capRefresh" class="btn-secondary" style="padding:10px 12px;font-size:16px;flex-shrink:0;">↻</button>
+          </div>
+        </div>
+        <p id="siErr" style="color:#ef4444;font-size:13px;display:none;"></p>
+        <button id="siSubmit" class="btn-primary" style="padding:13px;font-size:15px;margin-top:4px;">Proceed to Instructions →</button>
+        <button id="siBack" class="btn-secondary">← Back to Home</button>
+      </div>
+    </div>
+  `;
+  d.querySelector("#capRefresh").onclick=()=>{state.captcha=makeCaptcha();d.querySelector("#capQ").textContent=state.captcha.q;d.querySelector("#capAns").value="";};
+  d.querySelector("#siBack").onclick=()=>goTo("landing");
+  d.querySelector("#siSubmit").onclick=()=>{
+    const name=d.querySelector("#siName").value.trim(),email=d.querySelector("#siEmail").value.trim(),course=d.querySelector("#siCourse").value,cap=d.querySelector("#capAns").value.trim(),e=d.querySelector("#siErr");
+    e.style.display="none";
+    if(!name)return showErr(e,"Please enter your full name.");
+    if(!email)return showErr(e,"Please enter your email address.");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return showErr(e,"Please enter a valid email address.");
+    if(!course)return showErr(e,"Please select your course.");
+    if(!cap)return showErr(e,"Please solve the CAPTCHA.");
+    if(parseInt(cap)!==state.captcha.ans){state.captcha=makeCaptcha();return showErr(e,"Incorrect CAPTCHA. Try again.");}
+    if(state.questions.length===0)return showErr(e,"No questions available yet. Contact administrator.");
+    state.student={name,email,course};state.instrRevealed=0;goTo("instructions");
+  };
+  return d;
+}
+function showErr(el,msg){el.textContent="⚠ "+msg;el.style.display="block";}
+
+// 3. INSTRUCTIONS
+function renderInstructions(){
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;background:#fff;display:flex;flex-direction:column;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:15px;">📋</div>
+        <div><div style="color:#1e293b;font-weight:800;font-size:14px;">ExamReady</div><div style="color:#94a3b8;font-size:11px;">Welcome, ${state.student.name}</div></div>
+      </div>
+    </div>
+    <div style="flex:1;max-width:700px;margin:0 auto;width:100%;padding:32px 20px;overflow-y:auto;">
+      <h2 style="color:#1e293b;font-size:22px;font-weight:900;margin-bottom:4px;font-family:'Crimson Pro',serif;">Exam Instructions</h2>
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:24px;">Please read all instructions carefully before starting the exam.</p>
+      <div id="instrList"></div>
+      <div id="instrLoader" style="display:flex;align-items:center;gap:8px;margin-top:16px;color:#3b82f6;">
+        <div style="width:6px;height:6px;border-radius:50%;background:#3b82f6;animation:pulse 1s infinite;"></div>
+        <span style="font-size:13px;">Loading instructions...</span>
+      </div>
+      <div id="instrDone" style="display:none;margin-top:28px;padding:24px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1.5px solid #bbf7d0;border-radius:14px;text-align:center;" class="fade">
+        <div style="font-size:26px;margin-bottom:8px;">✅</div>
+        <p style="color:#15803d;font-weight:700;font-size:15px;margin-bottom:4px;">You have read all instructions.</p>
+        <p style="color:#64748b;font-size:13px;margin-bottom:18px;">By clicking below, you confirm that you understand all the rules.</p>
+        <button id="startBtn" class="btn-green" style="padding:13px 36px;font-size:15px;">I Understand — Start Exam →</button>
+      </div>
+      <div id="instrBottom"></div>
+    </div>
+  `;
+  state.instrRevealed=0;clearInterval(state.instrTimer);
+  function next(){
+    if(state.instrRevealed>=INSTRUCTIONS.length){
+      clearInterval(state.instrTimer);
+      const ld=d.querySelector("#instrLoader"),dn=d.querySelector("#instrDone");
+      if(ld)ld.style.display="none";if(dn)dn.style.display="block";return;
+    }
+    const item=INSTRUCTIONS[state.instrRevealed],list=d.querySelector("#instrList");
+    if(!list)return;
+    const row=document.createElement("div");
+    if(item.type==="heading"){
+      row.style.cssText="padding:8px 0;animation:fadeUp 0.5s ease;";
+      row.innerHTML=`<div style="color:#1e293b;font-size:17px;font-weight:800;font-family:'Crimson Pro',serif;padding:10px 16px;background:linear-gradient(135deg,#eff6ff,#faf5ff);border-radius:10px;border-left:4px solid #2563eb;">${item.text}</div>`;
+    } else if(item.type==="symbols"){
+      row.style.cssText="padding:6px 0;animation:fadeUp 0.5s ease;";
+      row.innerHTML=`
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:#e2e8f0;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#64748b;margin-top:2px;">${state.instrRevealed}</div>
+          <div>
+            <span style="color:#374151;font-size:14px;">${item.text}</span>
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+              <span style="display:flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600;color:#15803d;">🟢 Attempted</span>
+              <span style="display:flex;align-items:center;gap:6px;background:#fef2f2;border:1px solid #fecaca;padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600;color:#dc2626;">🔴 Not Attempted</span>
+              <span style="display:flex;align-items:center;gap:6px;background:#faf5ff;border:1px solid #ddd6fe;padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600;color:#7c3aed;">🟣 Marked for Review</span>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      row.style.cssText="padding:5px 0;animation:fadeUp 0.5s ease;";
+      row.innerHTML=`
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:#eff6ff;border:1.5px solid #bfdbfe;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#2563eb;margin-top:1px;">${state.instrRevealed}</div>
+          <p style="color:#374151;font-size:14px;line-height:1.55;margin:0;">${item.text}</p>
+        </div>`;
+    }
+    list.appendChild(row);
+    d.querySelector("#instrBottom").scrollIntoView({behavior:"smooth"});
+    state.instrRevealed++;
+  }
+  setTimeout(()=>{state.instrTimer=setInterval(next,800);},200);
+  d.addEventListener("click",e=>{if(e.target.id==="startBtn")startExam();});
+  return d;
+}
+
+function startExam(){
+  clearInterval(state.instrTimer);
+  state.answers={};state.statuses={};
+  state.questions.forEach(q=>state.statuses[q.id]="unattempted");
+  state.timeLeft=7200;state.startTime=Date.now();state.currentIdx=0;state.showConfirm=false;
+  goTo("exam");startTimer();
+}
+
+function startTimer(){
+  clearInterval(state.timerInterval);
+  state.timerInterval=setInterval(()=>{
+    state.timeLeft--;
+    const te=el("examTimer");
+    if(te){
+      te.textContent="⏱ "+formatTime(state.timeLeft);
+      const tc=state.timeLeft<300?"#ef4444":state.timeLeft<600?"#ea580c":"#16a34a";
+      te.style.color=tc;te.parentElement.style.borderColor=tc+"44";te.parentElement.style.background=tc+"0f";
+    }
+    const c=getCounts();
+    ["attempted","unattempted","review"].forEach(k=>{const ce=el("cnt_"+k);if(ce)ce.textContent=c[k];});
+    if(state.timeLeft<=0){clearInterval(state.timerInterval);submitExam();}
+  },1000);
+}
+function getCounts(){const v=Object.values(state.statuses);return{attempted:v.filter(s=>s==="attempted").length,unattempted:v.filter(s=>s==="unattempted").length,review:v.filter(s=>s==="review").length};}
+
+// 4. EXAM
+function renderExam(){
+  const q=state.questions[state.currentIdx];
+  const counts=getCounts();
+  const tc=state.timeLeft<300?"#ef4444":state.timeLeft<600?"#ea580c":"#16a34a";
+  const p1=state.questions.filter(x=>x.part===1),p2=state.questions.filter(x=>x.part===2);
+  const st=state.statuses[q.id]||"unattempted";
+  const stColor=st==="attempted"?"#16a34a":st==="review"?"#7c3aed":"#ef4444";
+  const stLabel=st==="attempted"?"Attempted":st==="review"?"Marked for Review":"Not Attempted";
+
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;background:#f8fafc;display:flex;flex-direction:column;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div class="topbar">
+      <div style="color:#1e293b;font-weight:800;font-size:14px;">📋 ExamReady <span style="color:#94a3b8;font-size:12px;font-weight:400;">| ${state.student.name} · ${state.student.course}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${[["cnt_attempted","Attempted","#16a34a",counts.attempted],["cnt_unattempted","Not Attempted","#ef4444",counts.unattempted],["cnt_review","Review","#7c3aed",counts.review]].map(([id,lbl,col,val])=>`
+          <div style="background:#fff;border:1.5px solid ${col}33;border-radius:8px;padding:3px 10px;display:flex;align-items:center;gap:5px;">
+            <span style="color:#94a3b8;font-size:11px;">${lbl}:</span>
+            <span id="${id}" style="color:${col};font-weight:800;font-size:13px;">${val}</span>
+          </div>`).join("")}
+      </div>
+      <div id="timerWrap" style="background:${tc}0f;border:1.5px solid ${tc}44;border-radius:9px;padding:5px 14px;">
+        <span id="examTimer" style="color:${tc};font-weight:800;font-size:17px;font-family:'JetBrains Mono',monospace;">⏱ ${formatTime(state.timeLeft)}</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex:1;overflow:hidden;">
+      <!-- QUESTION AREA -->
+      <div style="flex:1;padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span style="background:${q.part===1?"#eff6ff":"#faf5ff"};color:${q.part===1?"#2563eb":"#7c3aed"};border:1.5px solid ${q.part===1?"#bfdbfe":"#ddd6fe"};border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;">${q.part===1?"PART I – Technical":"PART II – Aptitude"}</span>
+          <span style="color:#94a3b8;font-size:13px;">Question ${state.currentIdx+1} of ${state.questions.length}</span>
+          <span style="color:${stColor};border:1.5px solid ${stColor}44;background:${stColor}0f;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;">${stLabel}</span>
+        </div>
+
+        <div class="card" style="padding:20px 22px;">
+          <p style="color:#1e293b;font-size:16px;line-height:1.7;margin:0;">${q.question}</p>
+        </div>
+
+        <div id="optsArea" style="display:flex;flex-direction:column;gap:8px;">
+          ${q.options.map((opt,i)=>{
+            const sel=state.answers[q.id]===i;
+            return `<button class="opt-btn${sel?" selected":""}" data-idx="${i}">
+              <span class="opt-circle">${String.fromCharCode(65+i)}</span>
+              ${opt}
+            </button>`;
+          }).join("")}
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <button id="prevBtn" class="btn-secondary" ${state.currentIdx===0?"disabled style='opacity:0.4;cursor:not-allowed;'":""}>← Previous</button>
+          <button id="clearBtn" class="btn-orange">✕ Clear Response</button>
+          <button id="reviewBtn" class="btn-purple">🟣 Mark for Review</button>
+          <button id="nextBtn" class="btn-primary">Save & Next →</button>
+          <button id="submitBtn" class="btn-red" style="margin-left:auto;">Submit Test ✓</button>
+        </div>
+      </div>
+
+      <!-- PALETTE -->
+      <div style="width:196px;background:#fff;border-left:1.5px solid #e2e8f0;padding:14px;overflow-y:auto;flex-shrink:0;">
+        <p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;font-weight:700;">Question Palette</p>
+        ${[{lbl:"Part I (Tech)",qs:p1,ac:"#2563eb"},{lbl:"Part II (Apt)",qs:p2,ac:"#7c3aed"}].map(({lbl,qs,ac})=>`
+          <div style="margin-bottom:14px;">
+            <p style="color:${ac};font-size:11px;font-weight:700;margin:0 0 7px;">${lbl}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+              ${qs.map((pq,i)=>{
+                const gi=state.questions.findIndex(x=>x.id===pq.id);
+                const pst=state.statuses[pq.id];const isA=gi===state.currentIdx;
+                const bg=isA?ac:pst==="attempted"?"#16a34a":pst==="review"?"#7c3aed":"#e2e8f0";
+                const fc=isA||pst==="attempted"||pst==="review"?"#fff":"#64748b";
+                return `<button class="palBtn" data-gidx="${gi}" style="width:28px;height:28px;border-radius:6px;border:none;background:${bg};color:${fc};font-size:11px;font-weight:700;cursor:pointer;box-shadow:${isA?`0 0 0 2px ${ac}66`:"none"};">${i+1}</button>`;
+              }).join("")}
+            </div>
+          </div>`).join("")}
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px;">
+          ${[["#16a34a","Attempted"],["#e2e8f0","Not Attempted"],["#7c3aed","For Review"]].map(([c,l])=>`
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:10px;height:10px;border-radius:3px;background:${c};flex-shrink:0;border:1px solid #e2e8f0;"></div>
+              <span style="color:#94a3b8;font-size:10px;">${l}</span>
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIRM MODAL -->
+    <div id="confirmModal" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:${state.showConfirm?"flex":"none"};align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px);">
+      <div class="card fade" style="padding:32px 28px;max-width:340px;width:90%;text-align:center;">
+        <div style="font-size:36px;margin-bottom:10px;">⚠️</div>
+        <h2 style="color:#1e293b;font-size:19px;margin-bottom:8px;font-weight:800;">Submit Test?</h2>
+        <p style="color:#64748b;font-size:13px;margin-bottom:6px;">Attempted: <b style="color:#16a34a;">${counts.attempted}</b> &nbsp;|&nbsp; Skipped: <b style="color:#ef4444;">${counts.unattempted}</b></p>
+        <p style="color:#94a3b8;font-size:12px;margin-bottom:22px;">You cannot return to the exam after submitting.</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button id="cancelSub" class="btn-secondary" style="padding:10px 22px;">Cancel</button>
+          <button id="confirmSub" class="btn-red" style="padding:10px 22px;">Yes, Submit ✓</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Option clicks — free change
+  d.querySelectorAll(".opt-btn").forEach(btn=>{
+    btn.onclick=()=>{
+      const i=parseInt(btn.dataset.idx),qid=state.questions[state.currentIdx].id;
+      state.answers[qid]=i;state.statuses[qid]="attempted";
+      render();startTimer();
+    };
+  });
+  d.querySelector("#clearBtn").onclick=()=>{
+    const qid=state.questions[state.currentIdx].id;
+    delete state.answers[qid];state.statuses[qid]="unattempted";
+    render();startTimer();
+  };
+  d.querySelector("#prevBtn").onclick=()=>{if(state.currentIdx>0){state.currentIdx--;render();startTimer();}};
+  d.querySelector("#nextBtn").onclick=()=>{if(state.currentIdx<state.questions.length-1){state.currentIdx++;render();startTimer();}};
+  d.querySelector("#reviewBtn").onclick=()=>{state.statuses[state.questions[state.currentIdx].id]="review";if(state.currentIdx<state.questions.length-1)state.currentIdx++;render();startTimer();};
+  d.querySelector("#submitBtn").onclick=()=>{state.showConfirm=true;render();startTimer();};
+  d.querySelector("#cancelSub").onclick=()=>{state.showConfirm=false;render();startTimer();};
+  d.querySelector("#confirmSub").onclick=()=>submitExam();
+  d.querySelectorAll(".palBtn").forEach(b=>b.onclick=()=>{state.currentIdx=parseInt(b.dataset.gidx);render();startTimer();});
+  return d;
+}
+
+async function submitExam(){
+  clearInterval(state.timerInterval);state.showConfirm=false;
+  state.timeTaken=Math.floor((Date.now()-state.startTime)/1000);
+  let c=0,w=0,u=0;
+  state.questions.forEach(q=>{const s=state.statuses[q.id];if(s==="unattempted")u++;else if(state.answers[q.id]===q.correct)c++;else w++;});
+  state.correct=c;state.incorrect=w;state.unattempted=u;state.score=c-w*0.25;
+  const accuracy=c+w>0?((c/(c+w))*100).toFixed(1):0;
+  await saveResult({name:state.student.name,email:state.student.email,course:state.student.course,score:state.score,correct:c,incorrect:w,unattempted:u,timeTaken:state.timeTaken,totalQs:state.questions.length,accuracy});
+  await loadAllResults();
+  goTo("result");
+}
+
+// 5. RESULT
+function renderResult(){
+  const{correct,incorrect,unattempted,score,timeTaken}=state;
+  const accuracy=correct+incorrect>0?((correct/(correct+incorrect))*100).toFixed(1):0;
+  // Find rank
+  const myRank=state.allResults.find(r=>r.email===state.student.email&&r.score===state.score);
+  const rank=myRank?myRank.rank:"-";
+  const total=state.allResults.length;
+  const topper=state.allResults[0]?.score||score;
+  const percentile=total>1?((total-rank)/total*100).toFixed(0):100;
+
+  function pStats(qs){let c=0,w=0,u=0;qs.forEach(q=>{if(state.statuses[q.id]==="unattempted")u++;else if(state.answers[q.id]===q.correct)c++;else w++;});return{c,w,u,score:(c-w*0.25).toFixed(2)};}
+  const p1=pStats(state.questions.filter(q=>q.part===1));
+  const p2=pStats(state.questions.filter(q=>q.part===2));
+  const grade=score>=(state.questions.length*0.75)?{l:"Excellent",c:"#16a34a",i:"🏆"}:score>=(state.questions.length*0.5)?{l:"Good",c:"#2563eb",i:"🎯"}:{l:"Needs Improvement",c:"#ea580c",i:"📊"};
+
+  const p1Qs=state.questions.filter(q=>q.part===1);
+  const p2Qs=state.questions.filter(q=>q.part===2);
+
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;background:#f8fafc;padding:28px;box-sizing:border-box;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div style="max-width:700px;margin:0 auto;" class="fade">
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:48px;margin-bottom:8px;">${grade.i}</div>
+        <h1 style="color:#1e293b;font-size:28px;font-weight:900;margin-bottom:4px;font-family:'Crimson Pro',serif;">Exam Submitted</h1>
+        <p style="color:#64748b;font-size:14px;margin-bottom:8px;">${state.student.name} &nbsp;·&nbsp; ${state.student.email} &nbsp;·&nbsp; ${state.student.course}</p>
+        <span style="background:${grade.c}15;color:${grade.c};border:1.5px solid ${grade.c}33;border-radius:20px;padding:4px 16px;font-size:13px;font-weight:700;">${grade.l}</span>
+      </div>
+
+      <!-- SCORE + RANK -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div class="card-blue" style="border-radius:18px;padding:24px;text-align:center;">
+          <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Total Score</div>
+          <div style="color:#1e293b;font-size:48px;font-weight:900;line-height:1;font-family:'Crimson Pro',serif;">${score.toFixed(2)}</div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:4px;">out of ${state.questions.length}</div>
+        </div>
+        <div class="card-purple" style="border-radius:18px;padding:24px;text-align:center;">
+          <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Your Rank</div>
+          <div style="color:#7c3aed;font-size:48px;font-weight:900;line-height:1;font-family:'Crimson Pro',serif;">#${rank}</div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:4px;">out of ${total} students</div>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;">
+        ${[["✅","Correct",correct,"#16a34a"],["❌","Incorrect",incorrect,"#ef4444"],["⬜","Unattempted",unattempted,"#94a3b8"],["🎯","Accuracy",accuracy+"%","#2563eb"],["⏱","Time Taken",formatTime(timeTaken),"#ea580c"],["📊","Percentile",percentile+"th","#7c3aed"]].map(([ic,lb,val,col])=>`
+          <div class="card" style="padding:14px 16px;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:20px;">${ic}</span>
+            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">${lb}</div>
+            <div style="color:${col};font-weight:800;font-size:19px;">${val}</div></div>
+          </div>`).join("")}
+      </div>
+
+      <!-- PART WISE -->
+      <div class="card" style="padding:18px;margin-bottom:14px;">
+        <h3 style="color:#1e293b;font-size:15px;font-weight:800;margin-bottom:12px;">Part-wise Summary</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          ${[{lb:"Part I – Technical",st:p1,col:"#2563eb"},{lb:"Part II – Aptitude",st:p2,col:"#7c3aed"}].map(({lb,st,col})=>`
+            <div style="background:${col}08;border:1.5px solid ${col}22;border-radius:10px;padding:14px;">
+              <div style="color:${col};font-weight:700;font-size:12px;margin-bottom:8px;">${lb}</div>
+              ${[["Correct",st.c,"#16a34a"],["Incorrect",st.w,"#ef4444"],["Unattempted",st.u,"#94a3b8"],["Score",st.score,col]].map(([l,v,c])=>`
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span style="color:#94a3b8;font-size:12px;">${l}</span>
+                  <span style="color:${c};font-weight:700;font-size:13px;">${v}</span>
+                </div>`).join("")}
+            </div>`).join("")}
+        </div>
+      </div>
+
+      <!-- QUESTION REVIEW — PART I -->
+      <div class="card" style="padding:18px;margin-bottom:14px;">
+        <h3 style="color:#1e293b;font-size:15px;font-weight:800;margin-bottom:4px;">Part I — Question Review</h3>
+        <p style="color:#94a3b8;font-size:12px;margin-bottom:12px;">Technical questions (${p1Qs.length} questions)</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+          ${p1Qs.map((q,i)=>{const s=state.statuses[q.id],ok=state.answers[q.id]===q.correct,col=s==="unattempted"?"#e2e8f0":ok?"#16a34a":"#dc2626",fc=s==="unattempted"?"#64748b":"#fff";return `<div title="Q${i+1} — ${s==="unattempted"?"Not Attempted":ok?"Correct":"Incorrect"}" style="width:32px;height:32px;border-radius:7px;background:${col};display:flex;align-items:center;justify-content:center;color:${fc};font-size:11px;font-weight:700;">${i+1}</div>`;}).join("")}
+        </div>
+        <div style="display:flex;gap:14px;">
+          ${[["#16a34a","Correct"],["#dc2626","Incorrect"],["#e2e8f0","Not Attempted"]].map(([c,l])=>`<div style="display:flex;align-items:center;gap:5px;"><div style="width:10px;height:10px;border-radius:3px;background:${c};border:1px solid #e2e8f0;"></div><span style="color:#94a3b8;font-size:11px;">${l}</span></div>`).join("")}
+        </div>
+      </div>
+
+      <!-- QUESTION REVIEW — PART II -->
+      <div class="card" style="padding:18px;margin-bottom:18px;">
+        <h3 style="color:#1e293b;font-size:15px;font-weight:800;margin-bottom:4px;">Part II — Question Review</h3>
+        <p style="color:#94a3b8;font-size:12px;margin-bottom:12px;">Aptitude questions (${p2Qs.length} questions)</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+          ${p2Qs.map((q,i)=>{const s=state.statuses[q.id],ok=state.answers[q.id]===q.correct,col=s==="unattempted"?"#e2e8f0":ok?"#16a34a":"#dc2626",fc=s==="unattempted"?"#64748b":"#fff";return `<div title="Q${i+1} — ${s==="unattempted"?"Not Attempted":ok?"Correct":"Incorrect"}" style="width:32px;height:32px;border-radius:7px;background:${col};display:flex;align-items:center;justify-content:center;color:${fc};font-size:11px;font-weight:700;">${i+1}</div>`;}).join("")}
+        </div>
+        <div style="display:flex;gap:14px;">
+          ${[["#16a34a","Correct"],["#dc2626","Incorrect"],["#e2e8f0","Not Attempted"]].map(([c,l])=>`<div style="display:flex;align-items:center;gap:5px;"><div style="width:10px;height:10px;border-radius:3px;background:${c};border:1px solid #e2e8f0;"></div><span style="color:#94a3b8;font-size:11px;">${l}</span></div>`).join("")}
+        </div>
+      </div>
+
+      <!-- LEADERBOARD -->
+      <div class="card" style="padding:18px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h3 style="color:#1e293b;font-size:15px;font-weight:800;">🏆 Leaderboard</h3>
+          <button id="toggleLB" class="btn-secondary" style="padding:6px 14px;font-size:12px;">${state.showLeaderboard?"Hide":"Show All"}</button>
+        </div>
+        <div id="lbContent">
+          ${state.allResults.slice(0,state.showLeaderboard?state.allResults.length:5).map((r,i)=>{
+            const isMe=r.email===state.student.email&&r.score===state.score;
+            return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:${isMe?"linear-gradient(135deg,#eff6ff,#faf5ff)":"#f8fafc"};border:1.5px solid ${isMe?"#bfdbfe":"#e2e8f0"};margin-bottom:6px;">
+              <div style="width:28px;height:28px;border-radius:50%;background:${i===0?"#fbbf24":i===1?"#94a3b8":i===2?"#ea580c":"#e2e8f0"};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:${i<3?"#fff":"#64748b"};flex-shrink:0;">${r.rank}</div>
+              <div style="flex:1;">
+                <div style="color:#1e293b;font-size:13px;font-weight:700;">${r.name} ${isMe?"<span style='color:#2563eb;font-size:11px;'>(You)</span>":""}</div>
+                <div style="color:#94a3b8;font-size:11px;">${r.course} · ${r.accuracy}% accuracy</div>
+              </div>
+              <div style="color:#2563eb;font-weight:800;font-size:15px;">${parseFloat(r.score).toFixed(2)}</div>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="viewSolBtn" class="btn-primary" style="flex:1;padding:13px;font-size:15px;">📖 View Solutions</button>
+        <button id="retryBtn" class="btn-secondary" style="flex:1;padding:13px;font-size:15px;">🔄 Try Again</button>
+      </div>
+    </div>
+  `;
+  d.querySelector("#toggleLB").onclick=()=>{state.showLeaderboard=!state.showLeaderboard;render();};
+  d.querySelector("#viewSolBtn").onclick=()=>goTo("solutions");
+  d.querySelector("#retryBtn").onclick=()=>goTo("landing");
+  return d;
+}
+
+// 6. SOLUTIONS PAGE
+function renderSolutions(){
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;background:#f8fafc;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:15px;">📋</div>
+        <div><div style="color:#1e293b;font-weight:800;font-size:14px;">Solutions</div><div style="color:#94a3b8;font-size:11px;">${state.student.name} · Score: ${state.score.toFixed(2)}</div></div>
+      </div>
+      <button id="backToResult" class="btn-secondary" style="padding:7px 16px;font-size:13px;">← Back to Result</button>
+    </div>
+    <div style="max-width:760px;margin:0 auto;padding:24px 16px;" id="solList">
+      <div style="text-align:center;padding:40px;">
+        <div class="spinner" style="margin:0 auto 16px;"></div>
+        <p style="color:#94a3b8;">Loading solutions...</p>
+      </div>
+    </div>
+  `;
+  d.querySelector("#backToResult").onclick=()=>goTo("result");
+  // Load solutions
+  setTimeout(()=>loadSolutions(d),100);
+  return d;
+}
+
+async function loadSolutions(parentDiv){
+  const list=parentDiv.querySelector("#solList");
+  if(!list)return;
+  // Reload questions with solutions from Firebase
+  await loadQuestions();
+  let html=`<h2 style="color:#1e293b;font-size:20px;font-weight:900;margin-bottom:4px;font-family:'Crimson Pro',serif;">Detailed Solutions</h2>
+  <p style="color:#94a3b8;font-size:13px;margin-bottom:20px;">Review each question with AI-generated explanations.</p>`;
+
+  for(let i=0;i<state.questions.length;i++){
+    const q=state.questions[i];
+    const s=state.statuses[q.id];
+    const myAns=state.answers[q.id];
+    const ok=myAns===q.correct;
+    const borderCol=s==="unattempted"?"#e2e8f0":ok?"#bbf7d0":"#fecaca";
+    const bgCol=s==="unattempted"?"#f8fafc":ok?"#f0fdf4":"#fef2f2";
+    const badge=s==="unattempted"?`<span style="background:#f1f5f9;color:#64748b;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">Not Attempted</span>`:ok?`<span style="background:#f0fdf4;color:#16a34a;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">✅ Correct</span>`:`<span style="background:#fef2f2;color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">❌ Incorrect</span>`;
+
+    html+=`<div style="background:${bgCol};border:1.5px solid ${borderCol};border-radius:14px;padding:18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="background:${q.part===1?"#eff6ff":"#faf5ff"};color:${q.part===1?"#2563eb":"#7c3aed"};border:1.5px solid ${q.part===1?"#bfdbfe":"#ddd6fe"};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">${q.part===1?"PART I":"PART II"}</span>
+        <span style="color:#64748b;font-size:12px;">Q${i+1}</span>
+        ${badge}
+      </div>
+      <p style="color:#1e293b;font-size:15px;line-height:1.6;margin:0 0 12px;font-weight:600;">${q.question}</p>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+        ${q.options.map((opt,idx)=>{
+          const isCorrect=idx===q.correct,isMyAns=myAns===idx&&s!=="unattempted";
+          let bg="#fff",border="#e2e8f0",col="#374151",suffix="";
+          if(isCorrect){bg="#f0fdf4";border="#86efac";col="#15803d";suffix=' <b style="color:#16a34a;">(Correct Answer)</b>';}
+          if(isMyAns&&!isCorrect){bg="#fef2f2";border="#fca5a5";col="#dc2626";suffix=' <b style="color:#dc2626;">(Your Answer)</b>';}
+          return `<div style="background:${bg};border:1.5px solid ${border};border-radius:8px;padding:9px 14px;font-size:13px;color:${col};">${String.fromCharCode(65+idx)}. ${opt}${suffix}</div>`;
+        }).join("")}
+      </div>
+      <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:14px;" id="sol_${q.id}">
+        ${q.solution?`<div style="display:flex;gap:8px;align-items:flex-start;"><span style="font-size:16px;flex-shrink:0;">💡</span><div><div style="color:#1e293b;font-size:13px;font-weight:700;margin-bottom:4px;">Explanation</div><p style="color:#374151;font-size:13px;line-height:1.6;margin:0;">${q.solution}</p></div></div>`
+        :`<div style="display:flex;gap:8px;align-items:center;" id="solLoad_${q.id}">
+          <div class="spinner" style="width:20px;height:20px;border-width:2px;"></div>
+          <span style="color:#94a3b8;font-size:13px;">Generating AI solution...</span>
+        </div>`}
+      </div>
+    </div>`;
+  }
+  list.innerHTML=html;
+
+  // Generate AI solutions for questions without solutions
+  for(const q of state.questions){
+    if(!q.solution){
+      const sol=await generateAISolution(q.question,q.options,q.correct);
+      // Save to Firebase
+      await updateQuestion(q.id,{solution:sol});
+      // Update UI
+      const solEl=parentDiv.querySelector(`#sol_${q.id}`);
+      if(solEl){
+        solEl.innerHTML=`<div style="display:flex;gap:8px;align-items:flex-start;"><span style="font-size:16px;flex-shrink:0;">💡</span><div><div style="color:#1e293b;font-size:13px;font-weight:700;margin-bottom:4px;">Explanation</div><p style="color:#374151;font-size:13px;line-height:1.6;margin:0;">${sol}</p></div></div>`;
+      }
+    }
+  }
+}
+
+// 7. ADMIN PANEL
+function renderAdmin(){
+  const p1c=state.questions.filter(q=>q.part===1).length,p2c=state.questions.filter(q=>q.part===2).length;
+  const filtered=state.adminFilter===0?state.questions:state.questions.filter(q=>q.part===state.adminFilter);
+
+  const d=document.createElement("div");
+  d.style.cssText="min-height:100vh;background:#f8fafc;padding:20px;box-sizing:border-box;position:relative;z-index:1;";
+  d.innerHTML=`
+    <div style="max-width:820px;margin:0 auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h1 style="color:#1e293b;font-size:22px;font-weight:900;font-family:'Crimson Pro',serif;">🛠 Admin Panel</h1>
+          <p style="color:#94a3b8;font-size:13px;margin-top:2px;">Part I: <b style="color:#2563eb;">${p1c}</b> &nbsp;|&nbsp; Part II: <b style="color:#7c3aed;">${p2c}</b> questions</p>
+        </div>
+        <button id="adminExit" class="btn-primary">✓ Done — Exit Admin</button>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;">
+        ${[["add",state.adminEditId?"✏ Edit":"➕ Add Question"],["list","📋 All Questions"],["bulk","📄 Bulk Add"],["results","📊 Results"]].map(([t,l])=>`
+          <button class="adminTab" data-tab="${t}" style="padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:${state.adminTab===t?"linear-gradient(135deg,#2563eb,#7c3aed)":"#fff"};color:${state.adminTab===t?"#fff":"#64748b"};border:1.5px solid ${state.adminTab===t?"transparent":"#e2e8f0"};">${l}</button>`).join("")}
+      </div>
+
+      <!-- ADD FORM -->
+      <div style="display:${state.adminTab==="add"?"block":"none"};">
+        <div class="card" style="padding:24px;">
+          <h3 style="color:#1e293b;font-size:16px;font-weight:800;margin-bottom:18px;">${state.adminEditId?"Edit Question":"Add New Question"}</h3>
+          <div style="margin-bottom:14px;">
+            <label class="lbl">Section *</label>
+            <div style="display:flex;gap:8px;">
+              ${[[1,"Part I – Technical"],[2,"Part II – Aptitude"]].map(([p,l])=>`<button class="partBtn" data-p="${p}" style="padding:8px 16px;border-radius:8px;border:1.5px solid ${state.adminForm.part===p?(p===1?"#2563eb":"#7c3aed"):"#e2e8f0"};cursor:pointer;font-size:13px;font-weight:600;background:${state.adminForm.part===p?(p===1?"#eff6ff":"#faf5ff"):"#fff"};color:${state.adminForm.part===p?(p===1?"#2563eb":"#7c3aed"):"#64748b"};">${l}</button>`).join("")}
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="lbl">Question *</label>
+            <textarea id="formQ" rows="3" placeholder="Type question here..." class="inp" style="resize:vertical;line-height:1.5;">${state.adminForm.question}</textarea>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="lbl">Options * — <span style="color:#94a3b8;text-transform:none;letter-spacing:0;font-weight:400;">Click circle to mark correct answer</span></label>
+            ${state.adminForm.options.map((opt,idx)=>`
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <button class="correctBtn" data-idx="${idx}" style="width:34px;height:34px;border-radius:50%;border:2px solid ${state.adminForm.correct===idx?"#16a34a":"#e2e8f0"};cursor:pointer;flex-shrink:0;background:${state.adminForm.correct===idx?"#16a34a":"#fff"};color:${state.adminForm.correct===idx?"#fff":"#94a3b8"};font-weight:800;font-size:15px;">${state.adminForm.correct===idx?"✓":String.fromCharCode(65+idx)}</button>
+                <input class="optInp" data-idx="${idx}" value="${opt}" placeholder="Option ${String.fromCharCode(65+idx)}" class="inp" style="width:100%;padding:10px 13px;border-radius:9px;border:1.5px solid #e2e8f0;background:#f8fafc;color:#1e293b;font-size:14px;outline:none;font-family:inherit;"/>
+              </div>`).join("")}
+            <p style="color:#94a3b8;font-size:12px;margin-top:4px;">Correct answer: <b style="color:#16a34a;">Option ${String.fromCharCode(65+state.adminForm.correct)}</b></p>
+          </div>
+          <p id="adminErr" style="color:#ef4444;font-size:13px;margin-bottom:12px;display:${state.adminErr?"block":"none"};">${state.adminErr}</p>
+          <div style="display:flex;gap:10px;">
+            <button id="saveQBtn" class="btn-green" style="padding:10px 24px;">${state.adminEditId?"💾 Update":"➕ Add Question"}</button>
+            ${state.adminEditId?`<button id="cancelEdit" class="btn-secondary">Cancel</button>`:""}
+          </div>
+        </div>
+      </div>
+
+      <!-- LIST -->
+      <div style="display:${state.adminTab==="list"?"block":"none"};">
+        <div style="display:flex;gap:6px;margin-bottom:14px;">
+          ${[[0,"All"],[1,"Part I"],[2,"Part II"]].map(([p,l])=>`<button class="filterBtn" data-fp="${p}" style="padding:6px 14px;border-radius:7px;border:1.5px solid ${state.adminFilter===p?"#2563eb":"#e2e8f0"};cursor:pointer;font-size:12px;font-weight:600;background:${state.adminFilter===p?"#eff6ff":"#fff"};color:${state.adminFilter===p?"#2563eb":"#64748b"};">${l} (${p===0?state.questions.length:p===1?p1c:p2c})</button>`).join("")}
+        </div>
+        ${filtered.length===0?`<div style="text-align:center;padding:50px;color:#94a3b8;"><div style="font-size:32px;margin-bottom:8px;">📭</div>No questions yet.</div>`
+        :`<div style="display:flex;flex-direction:column;gap:10px;">
+          ${filtered.map((q,i)=>`
+            <div class="card" style="padding:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                <div style="flex:1;">
+                  <div style="display:flex;gap:6px;margin-bottom:6px;">
+                    <span style="background:${q.part===1?"#eff6ff":"#faf5ff"};color:${q.part===1?"#2563eb":"#7c3aed"};border:1.5px solid ${q.part===1?"#bfdbfe":"#ddd6fe"};border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;">Part ${q.part}</span>
+                    <span style="color:#94a3b8;font-size:12px;">Q${i+1}</span>
+                    ${q.solution?`<span style="background:#f0fdf4;color:#16a34a;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;">💡 Has Solution</span>`:`<span style="background:#fef9c3;color:#ca8a04;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;">⏳ No Solution</span>`}
+                  </div>
+                  <p style="color:#1e293b;font-size:14px;margin:0 0 8px;line-height:1.5;">${q.question}</p>
+                  <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                    ${q.options.map((opt,idx)=>`<span style="background:${idx===q.correct?"#f0fdf4":"#f8fafc"};border:1.5px solid ${idx===q.correct?"#86efac":"#e2e8f0"};color:${idx===q.correct?"#15803d":"#64748b"};border-radius:6px;padding:3px 10px;font-size:12px;">${String.fromCharCode(65+idx)}. ${opt}${idx===q.correct?" ✓":""}</span>`).join("")}
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+                  <button class="editQBtn" data-id="${q.id}" class="btn-primary" style="padding:6px 12px;border-radius:8px;border:none;cursor:pointer;background:#2563eb;color:#fff;font-size:12px;font-weight:700;">✏ Edit</button>
+                  <button class="delQBtn" data-id="${q.id}" class="btn-red" style="padding:6px 12px;border-radius:8px;border:none;cursor:pointer;background:#dc2626;color:#fff;font-size:12px;font-weight:700;">🗑 Del</button>
+                </div>
+              </div>
+            </div>`).join("")}
+        </div>`}
+      </div>
+
+      <!-- BULK -->
+      <div style="display:${state.adminTab==="bulk"?"block":"none"};">
+        <div class="card" style="padding:24px;">
+          <h3 style="color:#1e293b;font-size:16px;font-weight:800;margin-bottom:8px;">📄 Add Multiple Questions</h3>
+          <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:14px;margin-bottom:16px;font-size:12px;color:#1d4ed8;line-height:2;">
+            <b>Format — blank line between each question:</b><br/>
+            Q. Question text here<br/>A. Option A<br/>B. Option B<br/>C. Option C<br/>D. Option D<br/>ANS: A<br/>PART: 1
+          </div>
+          <textarea id="bulkArea" rows="12" placeholder="Paste questions here..." class="inp" style="resize:vertical;line-height:1.6;font-size:13px;margin-bottom:12px;">${state.adminBulk}</textarea>
+          <p id="bulkMsg" style="color:#16a34a;font-size:13px;margin-bottom:12px;display:${state.adminBulkMsg?"block":"none"};">${state.adminBulkMsg}</p>
+          <button id="bulkAddBtn" class="btn-green" style="padding:10px 24px;">➕ Parse & Add All</button>
+        </div>
+      </div>
+
+      <!-- RESULTS -->
+      <div style="display:${state.adminTab==="results"?"block":"none"};" id="adminResultsTab">
+        <div id="adminResultsContent" style="text-align:center;padding:40px;">
+          <div class="spinner" style="margin:0 auto 16px;"></div>
+          <p style="color:#94a3b8;">Loading results...</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Tabs
+  d.querySelectorAll(".adminTab").forEach(b=>b.onclick=()=>{state.adminTab=b.dataset.tab;render();if(b.dataset.tab==="results")setTimeout(()=>loadAdminResults(d),100);});
+
+  // Part selector
+  d.querySelectorAll(".partBtn").forEach(b=>b.onclick=()=>{state.adminForm.part=parseInt(b.dataset.p);render();});
+  d.querySelectorAll(".correctBtn").forEach(b=>b.onclick=()=>{state.adminForm.correct=parseInt(b.dataset.idx);render();});
+  d.querySelectorAll(".optInp").forEach(inp=>inp.oninput=e=>{state.adminForm.options[parseInt(inp.dataset.idx)]=e.target.value;});
+  const fq=d.querySelector("#formQ");if(fq)fq.oninput=e=>state.adminForm.question=e.target.value;
+
+  // Save
+  const saveBtn=d.querySelector("#saveQBtn");
+  if(saveBtn)saveBtn.onclick=async()=>{
+    state.adminForm.question=d.querySelector("#formQ")?.value||"";
+    d.querySelectorAll(".optInp").forEach(i=>{state.adminForm.options[parseInt(i.dataset.idx)]=i.value;});
+    if(!state.adminForm.question.trim()){state.adminErr="Question is empty.";render();return;}
+    for(let i=0;i<4;i++)if(!state.adminForm.options[i].trim()){state.adminErr=`Option ${String.fromCharCode(65+i)} is empty.`;render();return;}
+    state.adminErr="";saveBtn.textContent="Saving...";saveBtn.disabled=true;
+    if(state.adminEditId){await updateQuestion(state.adminEditId,{...state.adminForm});state.adminEditId=null;}
+    else await saveQuestion({...state.adminForm});
+    state.adminForm={question:"",options:["","","",""],correct:0,part:1,solution:""};state.adminTab="list";render();
+  };
+  const ce=d.querySelector("#cancelEdit");if(ce)ce.onclick=()=>{state.adminEditId=null;state.adminForm={question:"",options:["","","",""],correct:0,part:1,solution:""};render();};
+
+  // Filter
+  d.querySelectorAll(".filterBtn").forEach(b=>b.onclick=()=>{state.adminFilter=parseInt(b.dataset.fp);render();});
+
+  // Edit/Delete
+  d.querySelectorAll(".editQBtn").forEach(b=>b.onclick=()=>{const q=state.questions.find(x=>x.id===b.dataset.id);if(q){state.adminEditId=q.id;state.adminForm={question:q.question,options:[...q.options],correct:q.correct,part:q.part,solution:q.solution||""};state.adminTab="add";render();}});
+  d.querySelectorAll(".delQBtn").forEach(b=>b.onclick=async()=>{b.textContent="...";b.disabled=true;await deleteQuestion(b.dataset.id);render();});
+
+  // Bulk
+  const ba=d.querySelector("#bulkArea");if(ba)ba.oninput=e=>state.adminBulk=e.target.value;
+  const bb=d.querySelector("#bulkAddBtn");
+  if(bb)bb.onclick=async()=>{
+    const text=d.querySelector("#bulkArea").value;
+    const blocks=text.trim().split(/\n\s*\n/);
+    let added=0,failed=0;bb.textContent="Adding...";bb.disabled=true;
+    for(const block of blocks){
+      const lines=block.trim().split("\n").map(l=>l.trim()).filter(Boolean);
+      try{
+        const qL=lines.find(l=>/^Q[.:]/i.test(l)),aL=lines.find(l=>/^A[.:]/i.test(l)),bL=lines.find(l=>/^B[.:]/i.test(l)),cL=lines.find(l=>/^C[.:]/i.test(l)),dL=lines.find(l=>/^D[.:]/i.test(l)),ansL=lines.find(l=>/^ANS/i.test(l)),partL=lines.find(l=>/^PART/i.test(l));
+        if(!qL||!aL||!bL||!cL||!dL||!ansL){failed++;continue;}
+        const qText=qL.replace(/^Q[.:]\s*/i,""),opts=[aL,bL,cL,dL].map(l=>l.replace(/^[A-D][.:]\s*/i,"")),ac=ansL.replace(/^ANS[.:]\s*/i,"").trim().toUpperCase(),correct=["A","B","C","D"].indexOf(ac),part=partL?parseInt(partL.replace(/^PART[.:]\s*/i,"")):1;
+        if(correct===-1){failed++;continue;}
+        await saveQuestion({question:qText,options:opts,correct,part:part===2?2:1,solution:""});added++;
+      }catch{failed++;}
+    }
+    state.adminBulkMsg=`${added} added.${failed>0?` ${failed} skipped.`:""}`;state.adminBulk="";state.adminTab="list";render();
+  };
+
+  d.querySelector("#adminExit").onclick=()=>goTo("landing");
+  if(state.adminTab==="results")setTimeout(()=>loadAdminResults(d),100);
+  return d;
+}
+
+async function loadAdminResults(parentDiv){
+  const content=parentDiv.querySelector("#adminResultsContent");if(!content)return;
+  const results=await loadAllResults();
+  if(results.length===0){content.innerHTML=`<div style="font-size:32px;margin-bottom:8px;">📭</div><p style="color:#94a3b8;">No results yet.</p>`;return;}
+  content.innerHTML=`
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:12px;overflow:hidden;border:1.5px solid #e2e8f0;">
+        <thead><tr style="background:#f8fafc;">
+          ${["Rank","Name","Email","Course","Score","Correct","Wrong","Skip","Accuracy","Time"].map(h=>`<th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:700;border-bottom:1.5px solid #e2e8f0;white-space:nowrap;">${h}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${results.map((r,i)=>`<tr style="border-bottom:1px solid #f1f5f9;${i%2===0?"background:#fff;":"background:#fafafa;"}">
+            <td style="padding:10px 12px;"><span style="width:26px;height:26px;border-radius:50%;background:${i===0?"#fbbf24":i===1?"#94a3b8":i===2?"#ea580c":"#e2e8f0"};display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${i<3?"#fff":"#64748b"};">${r.rank}</span></td>
+            <td style="padding:10px 12px;color:#1e293b;font-weight:600;">${r.name}</td>
+            <td style="padding:10px 12px;color:#64748b;">${r.email}</td>
+            <td style="padding:10px 12px;color:#64748b;">${r.course}</td>
+            <td style="padding:10px 12px;color:#2563eb;font-weight:700;">${parseFloat(r.score).toFixed(2)}</td>
+            <td style="padding:10px 12px;color:#16a34a;">${r.correct}</td>
+            <td style="padding:10px 12px;color:#ef4444;">${r.incorrect}</td>
+            <td style="padding:10px 12px;color:#94a3b8;">${r.unattempted}</td>
+            <td style="padding:10px 12px;color:#ea580c;">${r.accuracy}%</td>
+            <td style="padding:10px 12px;color:#64748b;">${formatTime(r.timeTaken)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function goTo(screen){
+  clearInterval(state.timerInterval);clearInterval(state.instrTimer);
+  if(screen==="admin"){state.loading=true;render();await loadQuestions();state.loading=false;state.adminTab="add";state.adminFilter=0;state.adminEditId=null;state.adminForm={question:"",options:["","","",""],correct:0,part:1,solution:""};state.adminBulk="";state.adminBulkMsg="";state.adminErr="";}
+  if(screen==="signin"){state.loading=true;render();await loadQuestions();state.loading=false;}
+  if(screen==="result")state.showLeaderboard=false;
+  state.screen=screen;render();
+}
+
+render();
+</script>
+</body>
+</html>
