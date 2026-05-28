@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ExamReady — Online Test Series</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0a0f1e; color: #f1f5f9; }
+    input, select, textarea, button { font-family: inherit; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fade { animation: fadeSlide 0.4s ease; }
+    .spinner { width:36px;height:36px;border:3px solid #334155;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc,
+         getDocs, doc, updateDoc, deleteDoc,
+         query, orderBy, serverTimestamp }      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ── FIREBASE CONFIG ───────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyBBprATihKt7tbhifTaHhicTRGdZI_15mM",
+  authDomain:        "examready-65881.firebaseapp.com",
+  projectId:         "examready-65881",
+  storageBucket:     "examready-65881.firebasestorage.app",
+  messagingSenderId: "681767961235",
+  appId:             "1:681767961235:web:aa929375f50dbd05a60366",
+  measurementId:     "G-3KZK99ZJGJ"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const ADMIN_USER = "mithilesh18";
+const ADMIN_PASS = "233303";
+const INSTRUCTIONS = [
+  "Welcome to ExamReady — Junior Engineer & Supervisor Test Series.",
+  "This examination consists of two parts: Part I and Part II.",
+  "Part I is the Technical / Professional Knowledge Test containing 120 questions worth 120 marks.",
+  "Part II is the Supervisory Aptitude Test containing 50 questions worth 50 marks.",
+  "The total duration of the examination is 2 hours (120 minutes).",
+  "The total marks for this examination are 170.",
+  "For every correct answer, you will be awarded +1 mark.",
+  "For every incorrect answer, -0.25 marks will be deducted (25% negative marking).",
+  "Questions left unattempted will carry 0 marks — no penalty for skipping.",
+  "You can navigate between questions using the Previous and Save & Next buttons.",
+  "You may mark any question for review using the Mark for Review button.",
+  "The question palette on the right shows the status of each question at a glance.",
+  "Green indicates an attempted question, Red indicates not-attempted, and Purple indicates marked for review.",
+  "The live timer is displayed at the top right of the screen — keep an eye on it.",
+  "The examination will auto-submit when the timer reaches zero.",
+  "You may submit the exam manually at any time using the Submit Test button.",
+  "Once submitted, you cannot go back and change your answers.",
+  "Your result will display your score, accuracy, and time taken after submission.",
+  "Please do not refresh or close the browser tab during the examination.",
+  "Read each question carefully before selecting your answer.",
+  "All the best — attempt confidently and manage your time wisely!"
+];
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function pad(n){ return String(n).padStart(2,"0"); }
+function formatTime(s){
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  return h>0?`${pad(h)}:${pad(m)}:${pad(sec)}`:`${pad(m)}:${pad(sec)}`;
+}
+function makeCaptcha(){
+  const a=Math.floor(Math.random()*9)+1, b=Math.floor(Math.random()*9)+1;
+  const plus=Math.random()>0.5;
+  return plus
+    ? {q:`${a} + ${b} = ?`, ans:a+b}
+    : {q:`${Math.max(a,b)} - ${Math.min(a,b)} = ?`, ans:Math.abs(a-b)};
+}
+function el(id){ return document.getElementById(id); }
+function qs(sel,parent){ return (parent||document).querySelector(sel); }
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let state = {
+  screen: "landing",      // landing | signin | instructions | exam | result | admin
+  student: null,
+  questions: [],
+  answers: {},
+  statuses: {},
+  timeLeft: 7200,
+  startTime: null,
+  timeTaken: 0,
+  timerInterval: null,
+  correct: 0, incorrect: 0, unattempted: 0, score: 0,
+  currentIdx: 0,
+  showConfirm: false,
+  showAdminLogin: false,
+  logoClickCount: 0,
+  logoClickTimer: null,
+  captcha: makeCaptcha(),
+  instructionRevealed: 0,
+  instructionTimer: null,
+  adminTab: "add",
+  adminFilter: 0,
+  adminEditId: null,
+  adminForm: { question:"", options:["","","",""], correct:0, part:1 },
+  adminBulk: "",
+  adminBulkMsg: "",
+  adminErr: "",
+  loading: false,
+};
+
+// ── FIREBASE FUNCTIONS ────────────────────────────────────────────────────────
+async function loadQuestions(){
+  try {
+    const snap = await getDocs(query(collection(db,"questions"), orderBy("createdAt","asc")));
+    state.questions = snap.docs.map(d=>({id:d.id,...d.data()}));
+  } catch(e){ console.error("Load questions error:",e); }
+}
+
+async function saveQuestion(data){
+  try {
+    const ref = await addDoc(collection(db,"questions"),{...data, createdAt: serverTimestamp()});
+    state.questions.push({id:ref.id,...data});
+    return true;
+  } catch(e){ console.error("Save error:",e); return false; }
+}
+
+async function updateQuestion(id, data){
+  try {
+    await updateDoc(doc(db,"questions",id), data);
+    state.questions = state.questions.map(q=>q.id===id?{...q,...data}:q);
+    return true;
+  } catch(e){ console.error("Update error:",e); return false; }
+}
+
+async function deleteQuestion(id){
+  try {
+    await deleteDoc(doc(db,"questions",id));
+    state.questions = state.questions.filter(q=>q.id!==id);
+    return true;
+  } catch(e){ console.error("Delete error:",e); return false; }
+}
+
+async function saveResult(data){
+  try {
+    await addDoc(collection(db,"results"),{...data, submittedAt: serverTimestamp()});
+  } catch(e){ console.error("Result save error:",e); }
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render(){
+  const root = el("root");
+  root.innerHTML = "";
+
+  // Admin login modal overlay
+  if(state.showAdminLogin){
+    root.appendChild(renderAdminLoginModal());
+  }
+
+  // Main screen
+  let screen;
+  if(state.screen==="landing")       screen = renderLanding();
+  else if(state.screen==="signin")   screen = renderSignIn();
+  else if(state.screen==="instructions") screen = renderInstructions();
+  else if(state.screen==="exam")     screen = renderExam();
+  else if(state.screen==="result")   screen = renderResult();
+  else if(state.screen==="admin")    screen = renderAdmin();
+  else screen = renderLanding();
+
+  root.appendChild(screen);
+}
+
+// ── LANDING ───────────────────────────────────────────────────────────────────
+function renderLanding(){
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:#0a0f1e;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;position:relative;overflow:hidden;";
+  div.innerHTML = `
+    <div style="position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(59,130,246,0.07) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;"></div>
+    <div id="logoWrap" style="text-align:center;margin-bottom:60px;cursor:default;user-select:none;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:90px;height:90px;border-radius:24px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);margin-bottom:20px;font-size:40px;box-shadow:0 20px 60px rgba(59,130,246,0.3);">📋</div>
+      <h1 style="color:#f8fafc;font-size:42px;font-weight:800;letter-spacing:-1px;">ExamReady</h1>
+      <p style="color:#475569;margin-top:10px;font-size:14px;letter-spacing:2px;text-transform:uppercase;">Junior Engineer &amp; Supervisor Test Series</p>
+    </div>
+    <button id="signinBtn" style="padding:16px 56px;border-radius:14px;border:none;cursor:pointer;background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;font-size:18px;font-weight:800;font-family:inherit;box-shadow:0 10px 40px rgba(59,130,246,0.35);letter-spacing:0.5px;">Sign In</button>
+    <p style="color:#1e3a5f;margin-top:40px;font-size:12px;">&copy; ${new Date().getFullYear()} ExamReady. All rights reserved.</p>
+  `;
+  div.querySelector("#signinBtn").onclick = ()=>{ goTo("signin"); };
+  div.querySelector("#logoWrap").onclick  = handleLogoClick;
+  return div;
+}
+
+function handleLogoClick(){
+  state.logoClickCount++;
+  clearTimeout(state.logoClickTimer);
+  if(state.logoClickCount>=3){
+    state.logoClickCount=0;
+    state.showAdminLogin=true;
+    render();
+    return;
+  }
+  state.logoClickTimer = setTimeout(()=>{ state.logoClickCount=0; },1500);
+}
+
+// ── ADMIN LOGIN MODAL ─────────────────────────────────────────────────────────
+function renderAdminLoginModal(){
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  overlay.innerHTML = `
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:20px;padding:36px 32px;max-width:360px;width:90%;" class="fade">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:32px;margin-bottom:8px;">🔐</div>
+        <h2 style="color:#f1f5f9;font-size:20px;font-weight:800;">Admin Access</h2>
+        <p style="color:#475569;margin-top:6px;font-size:13px;">Restricted — Authorized Personnel Only</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <input id="adminUser" placeholder="Username" style="${INP_CSS}"/>
+        <input id="adminPass" type="password" placeholder="Password" style="${INP_CSS}"/>
+        <p id="adminErr" style="color:#f87171;font-size:13px;display:none;"></p>
+        <button id="adminLoginBtn" style="${BTN_CSS('linear-gradient(135deg,#3b82f6,#8b5cf6)')}padding:12px;font-size:15px;">Login</button>
+        <button id="adminCancelBtn" style="${BTN_CSS('#1e293b')}border:1px solid #334155;color:#64748b;">Cancel</button>
+      </div>
+    </div>
+  `;
+  overlay.querySelector("#adminLoginBtn").onclick = ()=>{
+    const u = overlay.querySelector("#adminUser").value;
+    const p = overlay.querySelector("#adminPass").value;
+    const errEl = overlay.querySelector("#adminErr");
+    if(u===ADMIN_USER && p===ADMIN_PASS){
+      state.showAdminLogin=false;
+      goTo("admin");
+    } else {
+      errEl.textContent="⚠ Invalid credentials. Access denied.";
+      errEl.style.display="block";
+    }
+  };
+  overlay.querySelector("#adminCancelBtn").onclick = ()=>{ state.showAdminLogin=false; render(); };
+  return overlay;
+}
+
+// ── SIGN IN ───────────────────────────────────────────────────────────────────
+function renderSignIn(){
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:linear-gradient(135deg,#0a0f1e,#0f172a,#0a1628);display:flex;align-items:center;justify-content:center;padding:20px;";
+  div.innerHTML = `
+    <div style="background:rgba(255,255,255,0.04);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:22px;padding:44px 38px;max-width:460px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,0.6);" class="fade">
+      <div style="text-align:center;margin-bottom:32px;">
+        <div style="display:inline-flex;align-items:center;justify-content:center;width:58px;height:58px;border-radius:16px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);margin-bottom:14px;font-size:24px;">📋</div>
+        <h1 style="color:#f8fafc;font-size:22px;font-weight:800;">ExamReady</h1>
+        <p style="color:#475569;margin-top:6px;font-size:13px;">Create your account to begin</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="color:#94a3b8;font-size:12px;font-weight:600;display:block;margin-bottom:5px;">FULL NAME *</label>
+          <input id="siName" placeholder="Enter your full name" style="${INP_CSS}"/>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:12px;font-weight:600;display:block;margin-bottom:5px;">EMAIL ADDRESS *</label>
+          <input id="siEmail" type="email" placeholder="Enter your email address" style="${INP_CSS}"/>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:12px;font-weight:600;display:block;margin-bottom:5px;">COURSE *</label>
+          <select id="siCourse" style="${INP_CSS}background:#1e293b;cursor:pointer;">
+            <option value="">— Select your course —</option>
+            <option value="B.Tech">B.Tech</option>
+            <option value="Diploma">Diploma</option>
+          </select>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:12px;font-weight:600;display:block;margin-bottom:5px;">CAPTCHA VERIFICATION *</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div id="captchaQ" style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:10px 18px;color:#93c5fd;font-weight:800;font-size:18px;letter-spacing:2px;flex-shrink:0;font-family:monospace;">${state.captcha.q}</div>
+            <input id="captchaAns" placeholder="Answer" style="${INP_CSS}width:90px;"/>
+            <button id="refreshCaptcha" style="background:rgba(255,255,255,0.06);border:1px solid #334155;border-radius:9px;padding:10px 12px;cursor:pointer;color:#64748b;font-size:16px;flex-shrink:0;">↻</button>
+          </div>
+        </div>
+        <p id="siErr" style="color:#f87171;font-size:13px;display:none;"></p>
+        <button id="siSubmit" style="${BTN_CSS('linear-gradient(135deg,#3b82f6,#8b5cf6)')}padding:13px;font-size:15px;margin-top:4px;">Proceed to Instructions →</button>
+        <button id="siBack" style="padding:10px;border-radius:10px;border:1px solid #334155;background:transparent;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">← Back to Home</button>
+      </div>
+    </div>
+  `;
+  div.querySelector("#refreshCaptcha").onclick = ()=>{
+    state.captcha = makeCaptcha();
+    div.querySelector("#captchaQ").textContent = state.captcha.q;
+    div.querySelector("#captchaAns").value="";
+  };
+  div.querySelector("#siBack").onclick = ()=>goTo("landing");
+  div.querySelector("#siSubmit").onclick = ()=>{
+    const name   = div.querySelector("#siName").value.trim();
+    const email  = div.querySelector("#siEmail").value.trim();
+    const course = div.querySelector("#siCourse").value;
+    const cap    = div.querySelector("#captchaAns").value.trim();
+    const errEl  = div.querySelector("#siErr");
+    errEl.style.display="none";
+    if(!name)   return showErr(errEl,"Please enter your full name.");
+    if(!email)  return showErr(errEl,"Please enter your email address.");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr(errEl,"Please enter a valid email address.");
+    if(!course) return showErr(errEl,"Please select your course.");
+    if(!cap)    return showErr(errEl,"Please solve the CAPTCHA.");
+    if(parseInt(cap)!==state.captcha.ans){ state.captcha=makeCaptcha(); return showErr(errEl,"Incorrect CAPTCHA. Please try again."); }
+    if(state.questions.length===0) return showErr(errEl,"No questions available yet. Please contact the administrator.");
+    state.student = {name,email,course};
+    state.instructionRevealed=0;
+    goTo("instructions");
+  };
+  return div;
+}
+
+function showErr(el,msg){ el.textContent="⚠ "+msg; el.style.display="block"; }
+
+// ── INSTRUCTIONS ──────────────────────────────────────────────────────────────
+function renderInstructions(){
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:#0a0f1e;display:flex;flex-direction:column;";
+  div.innerHTML = `
+    <div style="background:#0f172a;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;gap:12px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;">📋</div>
+      <div>
+        <div style="color:#f1f5f9;font-weight:800;font-size:15px;">ExamReady</div>
+        <div style="color:#475569;font-size:12px;">Welcome, ${state.student.name}</div>
+      </div>
+    </div>
+    <div style="flex:1;max-width:720px;margin:0 auto;width:100%;padding:36px 24px;overflow-y:auto;">
+      <div style="margin-bottom:28px;">
+        <h2 style="color:#f1f5f9;font-size:24px;font-weight:800;margin-bottom:6px;">Exam Instructions</h2>
+        <p style="color:#475569;font-size:14px;">Please read all instructions carefully before starting the exam.</p>
+      </div>
+      <div id="instrList" style="display:flex;flex-direction:column;"></div>
+      <div id="instrLoader" style="display:flex;align-items:center;gap:8px;margin-top:20px;color:#3b82f6;">
+        <div style="width:6px;height:6px;border-radius:50%;background:#3b82f6;animation:pulse 1s infinite;"></div>
+        <span style="font-size:13px;">Loading instructions...</span>
+      </div>
+      <div id="instrDone" style="display:none;margin-top:36px;padding:24px;background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.25);border-radius:14px;text-align:center;" class="fade">
+        <div style="font-size:28px;margin-bottom:10px;">✅</div>
+        <p style="color:#86efac;font-weight:700;font-size:16px;margin-bottom:6px;">You have read all ${INSTRUCTIONS.length} instructions.</p>
+        <p style="color:#64748b;font-size:13px;margin-bottom:20px;">By clicking below, you confirm that you have understood all the rules.</p>
+        <button id="startExamBtn" style="${BTN_CSS('linear-gradient(135deg,#16a34a,#15803d)')}padding:14px 40px;font-size:16px;box-shadow:0 8px 30px rgba(34,197,94,0.25);">I Understand — Start Exam →</button>
+      </div>
+      <div id="instrBottom"></div>
+    </div>
+  `;
+
+  state.instructionRevealed = 0;
+  clearInterval(state.instructionTimer);
+
+  function revealNext(){
+    if(state.instructionRevealed >= INSTRUCTIONS.length){
+      clearInterval(state.instructionTimer);
+      const loader = div.querySelector("#instrLoader");
+      const done   = div.querySelector("#instrDone");
+      if(loader) loader.style.display="none";
+      if(done)   done.style.display="block";
+      return;
+    }
+    const i    = state.instructionRevealed;
+    const list = div.querySelector("#instrList");
+    if(!list) return;
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #0f172a;animation:fadeSlide 0.5s ease;";
+    row.innerHTML = `
+      <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:${i===0?"linear-gradient(135deg,#3b82f6,#8b5cf6)":i<2?"rgba(59,130,246,0.2)":"rgba(255,255,255,0.06)"};border:1px solid ${i<2?"rgba(59,130,246,0.4)":"#1e293b"};display:flex;align-items:center;justify-content:center;color:${i<2?"#60a5fa":"#475569"};font-size:12px;font-weight:800;">${i+1}</div>
+      <p style="color:${i===0?"#f1f5f9":"#cbd5e1"};font-size:${i===0?"16px":"15px"};font-weight:${i===0?"700":"400"};line-height:1.65;margin:0;">${INSTRUCTIONS[i]}</p>
+    `;
+    list.appendChild(row);
+    div.querySelector("#instrBottom").scrollIntoView({behavior:"smooth"});
+    state.instructionRevealed++;
+  }
+
+  setTimeout(()=>{
+    state.instructionTimer = setInterval(revealNext, 900);
+  }, 300);
+
+  div.querySelector("#instrDone") && (div.querySelector("#instrDone").onclick = null);
+  div.addEventListener("click", e=>{
+    if(e.target.id==="startExamBtn") startExam();
+  });
+  return div;
+}
+
+function startExam(){
+  clearInterval(state.instructionTimer);
+  state.answers   = {};
+  state.statuses  = {};
+  state.questions.forEach(q=>state.statuses[q.id]="unattempted");
+  state.timeLeft  = 7200;
+  state.startTime = Date.now();
+  state.currentIdx = 0;
+  state.showConfirm = false;
+  goTo("exam");
+  startTimer();
+}
+
+function startTimer(){
+  clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(()=>{
+    state.timeLeft--;
+    const timerEl = el("examTimer");
+    if(timerEl){
+      timerEl.textContent = "⏱ "+formatTime(state.timeLeft);
+      const tc = state.timeLeft<300?"#ef4444":state.timeLeft<600?"#f59e0b":"#22c55e";
+      timerEl.style.color = tc;
+      timerEl.parentElement.style.borderColor = tc+"55";
+      timerEl.parentElement.style.background  = tc+"18";
+    }
+    // Update attempted counter
+    const counts = getCounts();
+    ["attempted","unattempted","review"].forEach(k=>{
+      const cel = el("count_"+k);
+      if(cel) cel.textContent = counts[k];
+    });
+    if(state.timeLeft<=0){ clearInterval(state.timerInterval); submitExam(); }
+  },1000);
+}
+
+function getCounts(){
+  const vals = Object.values(state.statuses);
+  return {
+    attempted:   vals.filter(s=>s==="attempted").length,
+    unattempted: vals.filter(s=>s==="unattempted").length,
+    review:      vals.filter(s=>s==="review").length,
+  };
+}
+
+// ── EXAM ──────────────────────────────────────────────────────────────────────
+function renderExam(){
+  const q      = state.questions[state.currentIdx];
+  const counts = getCounts();
+  const tc     = state.timeLeft<300?"#ef4444":state.timeLeft<600?"#f59e0b":"#22c55e";
+  const p1     = state.questions.filter(q=>q.part===1);
+  const p2     = state.questions.filter(q=>q.part===2);
+
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:#0f172a;display:flex;flex-direction:column;";
+  div.innerHTML = `
+    <!-- TOP BAR -->
+    <div style="background:#1e293b;border-bottom:1px solid #334155;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100;">
+      <div style="color:#f1f5f9;font-weight:800;font-size:14px;">📋 ExamReady <span style="color:#64748b;font-size:12px;font-weight:400;">| ${state.student.name} · ${state.student.course}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <div style="background:rgba(255,255,255,0.05);border:1px solid #22c55e44;border-radius:7px;padding:3px 10px;display:flex;align-items:center;gap:5px;">
+          <span style="color:#64748b;font-size:11px;">Attempted:</span>
+          <span id="count_attempted" style="color:#22c55e;font-weight:800;font-size:13px;">${counts.attempted}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid #ef444444;border-radius:7px;padding:3px 10px;display:flex;align-items:center;gap:5px;">
+          <span style="color:#64748b;font-size:11px;">Not Attempted:</span>
+          <span id="count_unattempted" style="color:#ef4444;font-weight:800;font-size:13px;">${counts.unattempted}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid #a855f744;border-radius:7px;padding:3px 10px;display:flex;align-items:center;gap:5px;">
+          <span style="color:#64748b;font-size:11px;">Review:</span>
+          <span id="count_review" style="color:#a855f7;font-weight:800;font-size:13px;">${counts.review}</span>
+        </div>
+      </div>
+      <div id="examTimerWrap" style="background:${tc}18;border:1px solid ${tc}55;border-radius:9px;padding:5px 14px;">
+        <span id="examTimer" style="color:${tc};font-weight:800;font-size:18px;font-family:monospace;">⏱ ${formatTime(state.timeLeft)}</span>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div style="display:flex;flex:1;overflow:hidden;">
+      <!-- QUESTION AREA -->
+      <div style="flex:1;padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span style="background:${q.part===1?"rgba(59,130,246,0.2)":"rgba(168,85,247,0.2)"};color:${q.part===1?"#60a5fa":"#c084fc"};border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;">${q.part===1?"PART I – Technical":"PART II – Aptitude"}</span>
+          <span style="color:#475569;font-size:13px;">Question ${state.currentIdx+1} of ${state.questions.length}</span>
+          <span id="qStatus" style="color:${statusColor()};border:1px solid ${statusColor()}44;background:${statusColor()}11;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;">${statusLabel()}</span>
+        </div>
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:13px;padding:20px 22px;">
+          <p style="color:#e2e8f0;font-size:16px;line-height:1.7;margin:0;">${q.question}</p>
+        </div>
+        <div id="optionsArea" style="display:flex;flex-direction:column;gap:9px;">
+          ${q.options.map((opt,i)=>renderOption(opt,i,q)).join("")}
+        </div>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:6px;">
+          <button id="prevBtn" ${state.currentIdx===0?"disabled":""} style="${BTN_CSS('#475569')}opacity:${state.currentIdx===0?0.4:1};">← Previous</button>
+          <button id="reviewBtn" style="${BTN_CSS('#7c3aed')}">🟣 Mark for Review</button>
+          <button id="nextBtn" style="${BTN_CSS('#1d4ed8')}">Save &amp; Next →</button>
+          <button id="submitBtn" style="${BTN_CSS('#dc2626')}margin-left:auto;">Submit Test ✓</button>
+        </div>
+      </div>
+
+      <!-- PALETTE -->
+      <div style="width:200px;background:#1e293b;border-left:1px solid #334155;padding:14px;overflow-y:auto;flex-shrink:0;">
+        <p style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;">Question Palette</p>
+        <div style="margin-bottom:14px;">
+          <p style="color:#3b82f6;font-size:11px;font-weight:700;margin:0 0 7px;">Part I (Tech)</p>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;">
+            ${p1.map((pq,i)=>renderPaletteBtn(pq,i,"#3b82f6")).join("")}
+          </div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <p style="color:#a855f7;font-size:11px;font-weight:700;margin:0 0 7px;">Part II (Apt)</p>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;">
+            ${p2.map((pq,i)=>renderPaletteBtn(pq,i,"#a855f7")).join("")}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
+          ${[["#16a34a","Attempted"],["#374151","Not Attempted"],["#7c3aed","For Review"]].map(([c,l])=>`
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:10px;height:10px;border-radius:3px;background:${c};flex-shrink:0;"></div>
+              <span style="color:#94a3b8;font-size:10px;">${l}</span>
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIRM MODAL -->
+    <div id="confirmModal" style="position:fixed;inset:0;background:rgba(0,0,0,0.8);display:${state.showConfirm?"flex":"none"};align-items:center;justify-content:center;z-index:999;">
+      <div style="background:#1e293b;border:1px solid #475569;border-radius:20px;padding:32px 28px;max-width:340px;width:90%;text-align:center;">
+        <div style="font-size:38px;margin-bottom:10px;">⚠️</div>
+        <h2 style="color:#f1f5f9;font-size:19px;margin-bottom:8px;">Submit Test?</h2>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:6px;">Attempted: <b style="color:#22c55e;">${counts.attempted}</b> &nbsp;|&nbsp; Skipped: <b style="color:#ef4444;">${counts.unattempted}</b></p>
+        <p style="color:#64748b;font-size:12px;margin-bottom:22px;">You cannot return to the exam after submitting.</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button id="cancelSubmit" style="${BTN_CSS('#334155')}padding:10px 22px;color:#94a3b8;">Cancel</button>
+          <button id="confirmSubmit" style="${BTN_CSS('#dc2626')}padding:10px 22px;">Yes, Submit ✓</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Events
+  div.querySelector("#prevBtn").onclick    = ()=>{ if(state.currentIdx>0){state.currentIdx--;render();startTimer();} };
+  div.querySelector("#nextBtn").onclick    = ()=>{ if(state.currentIdx<state.questions.length-1){state.currentIdx++;render();startTimer();} };
+  div.querySelector("#reviewBtn").onclick  = ()=>{ state.statuses[state.questions[state.currentIdx].id]="review"; if(state.currentIdx<state.questions.length-1){state.currentIdx++;} render(); startTimer(); };
+  div.querySelector("#submitBtn").onclick  = ()=>{ state.showConfirm=true; render(); startTimer(); };
+  div.querySelector("#cancelSubmit").onclick  = ()=>{ state.showConfirm=false; render(); startTimer(); };
+  div.querySelector("#confirmSubmit").onclick = ()=>submitExam();
+
+  // Option clicks
+  div.querySelectorAll(".optBtn").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = parseInt(btn.dataset.idx);
+      const qid = state.questions[state.currentIdx].id;
+      state.answers[qid]  = i;
+      state.statuses[qid] = "attempted";
+      // Re-render options only
+      const area = div.querySelector("#optionsArea");
+      area.innerHTML = state.questions[state.currentIdx].options.map((opt,oi)=>renderOption(opt,oi,state.questions[state.currentIdx])).join("");
+      area.querySelectorAll(".optBtn").forEach(b=>{ b.onclick = arguments.callee; });
+      // Re-wire (simple re-render is better)
+      render(); startTimer();
+    };
+  });
+
+  // Palette clicks
+  div.querySelectorAll(".palBtn").forEach(btn=>{
+    btn.onclick = ()=>{ state.currentIdx=parseInt(btn.dataset.gidx); render(); startTimer(); };
+  });
+
+  return div;
+}
+
+function statusColor(){
+  const s = state.statuses[state.questions[state.currentIdx]?.id]||"unattempted";
+  return s==="attempted"?"#22c55e":s==="review"?"#a855f7":"#ef4444";
+}
+function statusLabel(){
+  const s = state.statuses[state.questions[state.currentIdx]?.id]||"unattempted";
+  return s==="attempted"?"Attempted":s==="review"?"Marked for Review":"Not Attempted";
+}
+function renderOption(opt,i,q){
+  const sel = state.answers[q.id]===i;
+  return `<button class="optBtn" data-idx="${i}" style="background:${sel?"rgba(59,130,246,0.15)":"rgba(255,255,255,0.03)"};border:2px solid ${sel?"#3b82f6":"#334155"};border-radius:11px;padding:13px 16px;cursor:pointer;color:${sel?"#93c5fd":"#cbd5e1"};font-size:15px;text-align:left;font-family:inherit;display:flex;align-items:center;gap:11px;width:100%;">
+    <span style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:${sel?"#3b82f6":"#1e293b"};border:2px solid ${sel?"#3b82f6":"#475569"};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:${sel?"#fff":"#94a3b8"};">${String.fromCharCode(65+i)}</span>
+    ${opt}
+  </button>`;
+}
+function renderPaletteBtn(pq,i,ac){
+  const gi  = state.questions.findIndex(x=>x.id===pq.id);
+  const st  = state.statuses[pq.id];
+  const isA = gi===state.currentIdx;
+  const bg  = isA?ac:st==="attempted"?"#16a34a":st==="review"?"#7c3aed":"#374151";
+  return `<button class="palBtn" data-gidx="${gi}" style="width:30px;height:30px;border-radius:7px;border:none;background:${bg};color:#fff;font-size:11px;font-weight:700;cursor:pointer;box-shadow:${isA?`0 0 0 2px ${ac}88`:"none"};">${i+1}</button>`;
+}
+
+async function submitExam(){
+  clearInterval(state.timerInterval);
+  state.showConfirm = false;
+  state.timeTaken   = Math.floor((Date.now()-state.startTime)/1000);
+
+  let correct=0,incorrect=0,unattempted=0;
+  state.questions.forEach(q=>{
+    const s=state.statuses[q.id];
+    if(s==="unattempted") unattempted++;
+    else if(state.answers[q.id]===q.correct) correct++;
+    else incorrect++;
+  });
+  state.correct     = correct;
+  state.incorrect   = incorrect;
+  state.unattempted = unattempted;
+  state.score       = correct - incorrect*0.25;
+
+  // Save to Firestore
+  await saveResult({
+    name:        state.student.name,
+    email:       state.student.email,
+    course:      state.student.course,
+    score:       state.score,
+    correct,incorrect,unattempted,
+    timeTaken:   state.timeTaken,
+    totalQs:     state.questions.length,
+    accuracy:    correct+incorrect>0?((correct/(correct+incorrect))*100).toFixed(1):0,
+  });
+
+  goTo("result");
+}
+
+// ── RESULT ────────────────────────────────────────────────────────────────────
+function renderResult(){
+  const {correct,incorrect,unattempted,score,timeTaken,questions,student} = state;
+  const accuracy = correct+incorrect>0?((correct/(correct+incorrect))*100).toFixed(1):0;
+
+  function pStats(qs){
+    let c=0,w=0,u=0;
+    qs.forEach(q=>{
+      if(state.statuses[q.id]==="unattempted") u++;
+      else if(state.answers[q.id]===q.correct) c++;
+      else w++;
+    });
+    return {c,w,u,score:(c-w*0.25).toFixed(2)};
+  }
+  const p1=pStats(state.questions.filter(q=>q.part===1));
+  const p2=pStats(state.questions.filter(q=>q.part===2));
+  const grade = score>=(state.questions.length*0.75)?{l:"Excellent",c:"#22c55e",i:"🏆"}
+               :score>=(state.questions.length*0.5)?{l:"Good",c:"#3b82f6",i:"🎯"}
+               :{l:"Needs Improvement",c:"#f59e0b",i:"📊"};
+
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:linear-gradient(135deg,#0a0f1e,#0f172a);padding:28px;box-sizing:border-box;";
+  div.innerHTML = `
+    <div style="max-width:680px;margin:0 auto;" class="fade">
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:50px;margin-bottom:8px;">${grade.i}</div>
+        <h1 style="color:#f1f5f9;font-size:28px;font-weight:800;margin-bottom:4px;">Exam Submitted</h1>
+        <p style="color:#64748b;font-size:14px;margin-bottom:8px;">${state.student.name} &nbsp;·&nbsp; ${state.student.email} &nbsp;·&nbsp; ${state.student.course}</p>
+        <span style="background:${grade.c}22;color:${grade.c};border:1px solid ${grade.c}44;border-radius:20px;padding:4px 16px;font-size:13px;font-weight:700;">${grade.l}</span>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(59,130,246,0.12),rgba(168,85,247,0.12));border:1px solid rgba(99,102,241,0.3);border-radius:20px;padding:28px;text-align:center;margin-bottom:18px;">
+        <div style="color:#64748b;font-size:13px;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Total Score</div>
+        <div style="color:#f1f5f9;font-size:54px;font-weight:800;line-height:1;">${score.toFixed(2)}</div>
+        <div style="color:#64748b;font-size:13px;margin-top:6px;">out of ${state.questions.length} marks</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:18px;">
+        ${[["✅","Correct",correct,"#22c55e"],["❌","Incorrect",incorrect,"#ef4444"],["⬜","Unattempted",unattempted,"#94a3b8"],["🎯","Accuracy",accuracy+"%","#3b82f6"],["⏱","Time Taken",formatTime(timeTaken),"#f59e0b"],["📋","Total Questions",state.questions.length,"#8b5cf6"]].map(([ic,lb,val,col])=>`
+          <div style="background:rgba(255,255,255,0.04);border:1px solid #1e293b;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:20px;">${ic}</span>
+            <div>
+              <div style="color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">${lb}</div>
+              <div style="color:${col};font-weight:800;font-size:20px;">${val}</div>
+            </div>
+          </div>`).join("")}
+      </div>
+      <div style="background:rgba(255,255,255,0.03);border:1px solid #1e293b;border-radius:14px;padding:20px;margin-bottom:18px;">
+        <h3 style="color:#e2e8f0;font-size:15px;margin-bottom:14px;">Part-wise Summary</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          ${[{lb:"Part I – Technical",st:p1,col:"#3b82f6"},{lb:"Part II – Aptitude",st:p2,col:"#a855f7"}].map(({lb,st,col})=>`
+            <div style="background:${col}0e;border:1px solid ${col}2a;border-radius:10px;padding:14px;">
+              <div style="color:${col};font-weight:700;font-size:12px;margin-bottom:10px;">${lb}</div>
+              ${[["Correct",st.c,"#22c55e"],["Incorrect",st.w,"#ef4444"],["Unattempted",st.u,"#64748b"],["Score",st.score,col]].map(([l,v,c])=>`
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span style="color:#64748b;font-size:12px;">${l}</span>
+                  <span style="color:${c};font-weight:700;font-size:13px;">${v}</span>
+                </div>`).join("")}
+            </div>`).join("")}
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,0.03);border:1px solid #1e293b;border-radius:14px;padding:20px;margin-bottom:24px;">
+        <h3 style="color:#e2e8f0;font-size:15px;margin-bottom:6px;">Question-wise Review</h3>
+        <p style="color:#475569;font-size:12px;margin-bottom:14px;">Shows attempt status only. Correct answers are not displayed.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${state.questions.map((q,i)=>{
+            const s=state.statuses[q.id];
+            const ok=state.answers[q.id]===q.correct;
+            const col=s==="unattempted"?"#374151":ok?"#16a34a":"#dc2626";
+            const tt=s==="unattempted"?"Not Attempted":ok?"Correct":"Incorrect";
+            return `<div title="Q${i+1} — ${tt}" style="width:36px;height:36px;border-radius:8px;background:${col};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;">${i+1}</div>`;
+          }).join("")}
+        </div>
+        <div style="display:flex;gap:16px;margin-top:12px;">
+          ${[["#16a34a","Correct"],["#dc2626","Incorrect"],["#374151","Not Attempted"]].map(([c,l])=>`
+            <div style="display:flex;align-items:center;gap:5px;">
+              <div style="width:10px;height:10px;border-radius:3px;background:${c};"></div>
+              <span style="color:#64748b;font-size:11px;">${l}</span>
+            </div>`).join("")}
+        </div>
+      </div>
+      <button id="retryBtn" style="${BTN_CSS('linear-gradient(135deg,#3b82f6,#8b5cf6)')}width:100%;padding:14px;font-size:15px;">🔄 Take Another Attempt</button>
+    </div>
+  `;
+  div.querySelector("#retryBtn").onclick = ()=>goTo("landing");
+  return div;
+}
+
+// ── ADMIN PANEL ───────────────────────────────────────────────────────────────
+function renderAdmin(){
+  const p1c = state.questions.filter(q=>q.part===1).length;
+  const p2c = state.questions.filter(q=>q.part===2).length;
+  const filtered = state.adminFilter===0?state.questions:state.questions.filter(q=>q.part===state.adminFilter);
+
+  const div = document.createElement("div");
+  div.style.cssText = "min-height:100vh;background:#0f172a;padding:20px;box-sizing:border-box;";
+  div.innerHTML = `
+    <div style="max-width:800px;margin:0 auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h1 style="color:#f1f5f9;font-size:22px;font-weight:800;">🛠 Admin Panel</h1>
+          <p style="color:#64748b;font-size:13px;margin-top:4px;">Part I: <b style="color:#60a5fa;">${p1c}</b> questions &nbsp;|&nbsp; Part II: <b style="color:#c084fc;">${p2c}</b> questions</p>
+        </div>
+        <button id="adminExitBtn" style="${BTN_CSS('linear-gradient(135deg,#3b82f6,#8b5cf6)')}">✓ Done — Exit Admin</button>
+      </div>
+
+      <!-- TABS -->
+      <div style="display:flex;gap:6px;margin-bottom:18px;">
+        ${[["add",state.adminEditId?"✏ Edit Question":"➕ Add Question"],["list","📋 All Questions"],["bulk","📄 Bulk Add"],["results","📊 Results"]].map(([t,l])=>`
+          <button class="adminTab" data-tab="${t}" style="padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:${state.adminTab===t?"linear-gradient(135deg,#3b82f6,#8b5cf6)":"rgba(255,255,255,0.06)"};color:${state.adminTab===t?"#fff":"#94a3b8"};">${l}</button>`).join("")}
+      </div>
+
+      <!-- ADD FORM -->
+      <div id="tabAdd" style="display:${state.adminTab==="add"?"block":"none"};">
+        <div style="background:rgba(255,255,255,0.04);border:1px solid #334155;border-radius:16px;padding:24px;">
+          <h3 style="color:#e2e8f0;font-size:16px;margin-bottom:18px;">${state.adminEditId?"Edit Question":"Add New Question"}</h3>
+          <div style="margin-bottom:14px;">
+            <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px;">SECTION *</label>
+            <div style="display:flex;gap:8px;">
+              <button class="partBtn" data-p="1" style="padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:${state.adminForm.part===1?"#1d4ed8":"rgba(255,255,255,0.07)"};color:${state.adminForm.part===1?"#fff":"#94a3b8"};">Part I – Technical</button>
+              <button class="partBtn" data-p="2" style="padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:${state.adminForm.part===2?"#7c3aed":"rgba(255,255,255,0.07)"};color:${state.adminForm.part===2?"#fff":"#94a3b8"};">Part II – Aptitude</button>
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px;">QUESTION *</label>
+            <textarea id="formQ" rows="3" placeholder="Type question here..." style="${INP_CSS}resize:vertical;line-height:1.5;">${state.adminForm.question}</textarea>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:8px;">OPTIONS * — <span style="color:#475569;font-weight:400;">Click the circle to mark correct answer</span></label>
+            ${state.adminForm.options.map((opt,idx)=>`
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <button class="correctBtn" data-idx="${idx}" style="width:34px;height:34px;border-radius:50%;border:none;cursor:pointer;flex-shrink:0;background:${state.adminForm.correct===idx?"#16a34a":"rgba(255,255,255,0.08)"};color:${state.adminForm.correct===idx?"#fff":"#64748b"};font-weight:800;font-size:15px;">${state.adminForm.correct===idx?"✓":String.fromCharCode(65+idx)}</button>
+                <input class="optInput" data-idx="${idx}" value="${opt}" placeholder="Option ${String.fromCharCode(65+idx)}" style="${INP_CSS}"/>
+              </div>`).join("")}
+            <p style="color:#64748b;font-size:12px;margin-top:4px;">Correct answer: <b style="color:#22c55e;">Option ${String.fromCharCode(65+state.adminForm.correct)}</b></p>
+          </div>
+          <p id="adminFormErr" style="color:#f87171;font-size:13px;margin-bottom:12px;display:${state.adminErr?"block":"none"};">${state.adminErr}</p>
+          <div style="display:flex;gap:10px;">
+            <button id="saveQBtn" style="${BTN_CSS('linear-gradient(135deg,#16a34a,#15803d)')}padding:10px 24px;">${state.adminEditId?"💾 Update Question":"➕ Add Question"}</button>
+            ${state.adminEditId?`<button id="cancelEditBtn" style="${BTN_CSS('#475569')}">Cancel</button>`:""}
+          </div>
+        </div>
+      </div>
+
+      <!-- LIST -->
+      <div id="tabList" style="display:${state.adminTab==="list"?"block":"none"};">
+        <div style="display:flex;gap:6px;margin-bottom:14px;">
+          ${[[0,"All"],[1,"Part I"],[2,"Part II"]].map(([p,l])=>`
+            <button class="filterBtn" data-fp="${p}" style="padding:6px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:${state.adminFilter===p?"#3b82f6":"rgba(255,255,255,0.06)"};color:${state.adminFilter===p?"#fff":"#94a3b8"};">${l} (${p===0?state.questions.length:p===1?p1c:p2c})</button>`).join("")}
+        </div>
+        ${filtered.length===0?`<div style="text-align:center;padding:50px;color:#475569;"><div style="font-size:32px;margin-bottom:8px;">📭</div>No questions yet.</div>`
+        :`<div style="display:flex;flex-direction:column;gap:10px;">
+          ${filtered.map((q,i)=>`
+            <div style="background:rgba(255,255,255,0.04);border:1px solid #334155;border-radius:12px;padding:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                <div style="flex:1;">
+                  <div style="display:flex;gap:6px;margin-bottom:6px;">
+                    <span style="background:${q.part===1?"rgba(59,130,246,0.2)":"rgba(168,85,247,0.2)"};color:${q.part===1?"#60a5fa":"#c084fc"};border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;">Part ${q.part}</span>
+                    <span style="color:#475569;font-size:12px;">Q${i+1}</span>
+                  </div>
+                  <p style="color:#e2e8f0;font-size:14px;margin:0 0 8px;line-height:1.5;">${q.question}</p>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                    ${q.options.map((opt,idx)=>`<span style="background:${idx===q.correct?"rgba(34,197,94,0.15)":"rgba(255,255,255,0.05)"};border:1px solid ${idx===q.correct?"#22c55e":"#334155"};color:${idx===q.correct?"#86efac":"#94a3b8"};border-radius:6px;padding:3px 10px;font-size:12px;">${String.fromCharCode(65+idx)}. ${opt}${idx===q.correct?" ✓":""}</span>`).join("")}
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+                  <button class="editQBtn" data-id="${q.id}" style="${BTN_CSS('#1d4ed8')}padding:6px 12px;font-size:12px;">✏ Edit</button>
+                  <button class="delQBtn" data-id="${q.id}" style="${BTN_CSS('#dc2626')}padding:6px 12px;font-size:12px;">🗑 Delete</button>
+                </div>
+              </div>
+            </div>`).join("")}
+        </div>`}
+      </div>
+
+      <!-- BULK -->
+      <div id="tabBulk" style="display:${state.adminTab==="bulk"?"block":"none"};">
+        <div style="background:rgba(255,255,255,0.04);border:1px solid #334155;border-radius:16px;padding:24px;">
+          <h3 style="color:#e2e8f0;font-size:16px;margin-bottom:8px;">📄 Add Multiple Questions at Once</h3>
+          <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:14px;margin-bottom:16px;font-size:12px;color:#93c5fd;line-height:2;">
+            <b>Format — separate each question with one blank line:</b><br/>
+            Q. Question text here<br/>A. First option<br/>B. Second option<br/>C. Third option<br/>D. Fourth option<br/>ANS: A<br/>PART: 1
+          </div>
+          <textarea id="bulkArea" rows="12" placeholder="Paste questions here..." style="${INP_CSS}resize:vertical;line-height:1.6;font-size:13px;margin-bottom:12px;">${state.adminBulk}</textarea>
+          <p id="bulkMsg" style="color:#22c55e;font-size:13px;margin-bottom:12px;display:${state.adminBulkMsg?"block":"none"};">${state.adminBulkMsg}</p>
+          <button id="bulkAddBtn" style="${BTN_CSS('linear-gradient(135deg,#16a34a,#15803d)')}padding:10px 24px;">➕ Parse &amp; Add All Questions</button>
+        </div>
+      </div>
+
+      <!-- RESULTS -->
+      <div id="tabResults" style="display:${state.adminTab==="results"?"block":"none"};">
+        <div id="resultsContent" style="text-align:center;padding:40px;color:#475569;">
+          <div class="spinner" style="margin:0 auto 16px;"></div>
+          <p>Loading results...</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Tab switching
+  div.querySelectorAll(".adminTab").forEach(b=>b.onclick=()=>{ state.adminTab=b.dataset.tab; render(); if(b.dataset.tab==="results") loadResults(div); });
+
+  // Part selector
+  div.querySelectorAll(".partBtn").forEach(b=>b.onclick=()=>{ state.adminForm.part=parseInt(b.dataset.p); render(); });
+
+  // Correct answer
+  div.querySelectorAll(".correctBtn").forEach(b=>b.onclick=()=>{ state.adminForm.correct=parseInt(b.dataset.idx); render(); });
+
+  // Option inputs
+  div.querySelectorAll(".optInput").forEach(inp=>inp.oninput=e=>{ state.adminForm.options[parseInt(inp.dataset.idx)]=e.target.value; });
+
+  // Question input
+  const formQ = div.querySelector("#formQ");
+  if(formQ) formQ.oninput=e=>state.adminForm.question=e.target.value;
+
+  // Save question
+  const saveBtn = div.querySelector("#saveQBtn");
+  if(saveBtn) saveBtn.onclick = async()=>{
+    state.adminForm.question = div.querySelector("#formQ")?.value||"";
+    div.querySelectorAll(".optInput").forEach(i=>{ state.adminForm.options[parseInt(i.dataset.idx)]=i.value; });
+    if(!state.adminForm.question.trim()){state.adminErr="Question field is empty.";render();return;}
+    for(let i=0;i<4;i++) if(!state.adminForm.options[i].trim()){state.adminErr=`Option ${String.fromCharCode(65+i)} is empty.`;render();return;}
+    state.adminErr="";
+    saveBtn.textContent="Saving..."; saveBtn.disabled=true;
+    if(state.adminEditId){
+      await updateQuestion(state.adminEditId,{...state.adminForm});
+      state.adminEditId=null;
+    } else {
+      await saveQuestion({...state.adminForm});
+    }
+    state.adminForm={question:"",options:["","","",""],correct:0,part:1};
+    state.adminTab="list"; render();
+  };
+
+  const cancelBtn = div.querySelector("#cancelEditBtn");
+  if(cancelBtn) cancelBtn.onclick=()=>{ state.adminEditId=null; state.adminForm={question:"",options:["","","",""],correct:0,part:1}; render(); };
+
+  // Filter
+  div.querySelectorAll(".filterBtn").forEach(b=>b.onclick=()=>{ state.adminFilter=parseInt(b.dataset.fp); render(); });
+
+  // Edit
+  div.querySelectorAll(".editQBtn").forEach(b=>b.onclick=()=>{
+    const q=state.questions.find(x=>x.id===b.dataset.id);
+    if(q){ state.adminEditId=q.id; state.adminForm={question:q.question,options:[...q.options],correct:q.correct,part:q.part}; state.adminTab="add"; render(); }
+  });
+
+  // Delete
+  div.querySelectorAll(".delQBtn").forEach(b=>b.onclick=async()=>{
+    b.textContent="..."; b.disabled=true;
+    await deleteQuestion(b.dataset.id);
+    render();
+  });
+
+  // Bulk
+  const bulkArea = div.querySelector("#bulkArea");
+  if(bulkArea) bulkArea.oninput=e=>state.adminBulk=e.target.value;
+  const bulkBtn = div.querySelector("#bulkAddBtn");
+  if(bulkBtn) bulkBtn.onclick=async()=>{
+    const text = div.querySelector("#bulkArea").value;
+    const blocks=text.trim().split(/\n\s*\n/);
+    let added=0,failed=0;
+    bulkBtn.textContent="Adding..."; bulkBtn.disabled=true;
+    for(const block of blocks){
+      const lines=block.trim().split("\n").map(l=>l.trim()).filter(Boolean);
+      try{
+        const qL=lines.find(l=>/^Q[.:]/i.test(l));
+        const aL=lines.find(l=>/^A[.:]/i.test(l));
+        const bL=lines.find(l=>/^B[.:]/i.test(l));
+        const cL=lines.find(l=>/^C[.:]/i.test(l));
+        const dL=lines.find(l=>/^D[.:]/i.test(l));
+        const ansL=lines.find(l=>/^ANS/i.test(l));
+        const partL=lines.find(l=>/^PART/i.test(l));
+        if(!qL||!aL||!bL||!cL||!dL||!ansL){failed++;continue;}
+        const qText=qL.replace(/^Q[.:]\s*/i,"");
+        const opts=[aL,bL,cL,dL].map(l=>l.replace(/^[A-D][.:]\s*/i,""));
+        const ac=ansL.replace(/^ANS[.:]\s*/i,"").trim().toUpperCase();
+        const correct=["A","B","C","D"].indexOf(ac);
+        const part=partL?parseInt(partL.replace(/^PART[.:]\s*/i,"")):1;
+        if(correct===-1){failed++;continue;}
+        await saveQuestion({question:qText,options:opts,correct,part:part===2?2:1});
+        added++;
+      }catch{failed++;}
+    }
+    state.adminBulkMsg=`${added} question(s) added.${failed>0?` ${failed} skipped.`:""}`;
+    state.adminBulk=""; state.adminTab="list"; render();
+  };
+
+  // Exit
+  div.querySelector("#adminExitBtn").onclick=()=>goTo("landing");
+
+  // Load results if on results tab
+  if(state.adminTab==="results") setTimeout(()=>loadResults(div),100);
+
+  return div;
+}
+
+async function loadResults(parentDiv){
+  try{
+    const snap=await getDocs(query(collection(db,"results"),orderBy("submittedAt","desc")));
+    const results=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const content=parentDiv.querySelector("#resultsContent");
+    if(!content) return;
+    if(results.length===0){
+      content.innerHTML=`<div style="font-size:32px;margin-bottom:8px;">📭</div><p>No results yet.</p>`;
+      return;
+    }
+    content.innerHTML=`
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#1e293b;">
+              ${["#","Name","Email","Course","Score","Correct","Wrong","Skip","Accuracy","Time"].map(h=>`<th style="padding:10px 12px;text-align:left;color:#94a3b8;font-weight:600;border-bottom:1px solid #334155;">${h}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${results.map((r,i)=>`
+              <tr style="border-bottom:1px solid #1e293b;">
+                <td style="padding:10px 12px;color:#64748b;">${i+1}</td>
+                <td style="padding:10px 12px;color:#f1f5f9;font-weight:600;">${r.name}</td>
+                <td style="padding:10px 12px;color:#94a3b8;">${r.email}</td>
+                <td style="padding:10px 12px;color:#94a3b8;">${r.course}</td>
+                <td style="padding:10px 12px;color:#3b82f6;font-weight:700;">${parseFloat(r.score).toFixed(2)}</td>
+                <td style="padding:10px 12px;color:#22c55e;">${r.correct}</td>
+                <td style="padding:10px 12px;color:#ef4444;">${r.incorrect}</td>
+                <td style="padding:10px 12px;color:#64748b;">${r.unattempted}</td>
+                <td style="padding:10px 12px;color:#f59e0b;">${r.accuracy}%</td>
+                <td style="padding:10px 12px;color:#94a3b8;">${formatTime(r.timeTaken)}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }catch(e){
+    const content=parentDiv?.querySelector("#resultsContent");
+    if(content) content.innerHTML=`<p style="color:#f87171;">Error loading results. Check Firestore rules.</p>`;
+  }
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+async function goTo(screen){
+  clearInterval(state.timerInterval);
+  clearInterval(state.instructionTimer);
+  if(screen==="admin"){
+    state.loading=true; render();
+    await loadQuestions();
+    state.loading=false;
+    state.adminTab="add"; state.adminFilter=0;
+    state.adminEditId=null;
+    state.adminForm={question:"",options:["","","",""],correct:0,part:1};
+    state.adminBulk=""; state.adminBulkMsg=""; state.adminErr="";
+  }
+  if(screen==="signin"){
+    state.loading=true; render();
+    await loadQuestions();
+    state.loading=false;
+  }
+  state.screen=screen;
+  render();
+}
+
+// ── CSS HELPERS ───────────────────────────────────────────────────────────────
+const INP_CSS = "width:100%;padding:10px 13px;border-radius:9px;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid #334155;color:#f1f5f9;font-size:14px;outline:none;font-family:inherit;";
+function BTN_CSS(bg){ return `padding:9px 18px;border-radius:9px;border:none;cursor:pointer;background:${bg};color:#fff;font-size:13px;font-weight:700;font-family:inherit;`; }
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
